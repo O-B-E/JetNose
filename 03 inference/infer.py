@@ -20,8 +20,8 @@ try:
     from model_arch import NNetwork, load_model
     from sensor_collector import SensorDataCollector
 except ImportError as e:
-    print(f"\nError: Failed to import utils.")
-    print(f"Details: {e}")
+    print('Error: Failed to import utils.')
+    print('Details: {e}')
     sys.exit(1)
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -114,7 +114,7 @@ def main():
         print("Entering real-time inference loop. CTRL+C to exit.\n")
 
         while True:
-            input("Press ENTER to capture 10 samples and infer...")
+            # input("Press ENTER to capture 10 samples and infer...")
 
             # Optionally show purge/baseline between windows
             # collector.purge_check()

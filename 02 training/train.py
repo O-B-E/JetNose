@@ -65,6 +65,7 @@ def train_model(csv_file='csv/training_data.csv', num_epochs=300, lr=0.0005, val
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
     # Training loop
+    print('Started Training')
     for epoch in range(num_epochs):
         # Training phase
         model.train()
