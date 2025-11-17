@@ -10,7 +10,7 @@ import sys
 
 # Importing utils
 current_dir = os.path.dirname(os.path.abspath(__file__))
-utils_path = os.path.join(current_dir, '../utils')
+utils_path = os.path.join(current_dir, '../01 utils')
 sys.path.append(utils_path)
 
 try:
