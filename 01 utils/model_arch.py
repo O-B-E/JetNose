@@ -58,26 +58,3 @@ def predict(model, scaler, label_encoder, new_data_df, device=None):
         _, predicted = torch.max(outputs, 1)
 
     return label_encoder.inverse_transform(predicted.cpu().numpy())
-
-
-
-    
-'''
-# Load and predict
-load_path = input("Enter model **load** path (default: model/scent_classifier.pth): ") or model_path
-model, scaler, label_encoder = load_model(path=load_path)
-
-
-# Example: create dummy new_df for testing
-new_df = pd.DataFrame({
-    'Temp': [20, 21.2], 
-    'Hum': [60.1, 72.7],
-    'NO2_V': [0.7, 1.2],
-    'Eth_V': [1, 1.7],
-    'VOC_V': [0.8, 1.2],
-    'CO_V': [2.3, 2.6]
-})
-
-predictions = predict(model, scaler, label_encoder, new_df)
-print("Predictions:", predictions)
-'''
