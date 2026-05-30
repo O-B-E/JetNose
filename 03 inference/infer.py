@@ -41,7 +41,7 @@ def collect_window_as_df(collector, label="inference", num_samples=10):
             f"\rSample {i+1}/{num_samples} | "
             f"NO2:{data['NO2_V']:.2f}V Eth:{data['Eth_V']:.2f}V "
             f"VOC:{data['VOC_V']:.2f}V CO:{data['CO_V']:.2f}V",
-            end='',
+            end=''
         )
 
         time.sleep(0.25)
@@ -99,6 +99,9 @@ def main():
     model_path = input(
         "Enter model path or press Enter for default: "
     ).strip() or os.path.join(current_dir, "../02 training/model/scent_classifier.pth")
+    
+    print("Loading Model...")
+    
     model, scaler, label_encoder = load_model(path=model_path, device=DEVICE)
 
     # Init collector (no CSV needed for inference, but reuse class)
