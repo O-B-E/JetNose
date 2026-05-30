@@ -1,3 +1,11 @@
+'''
+collect_data_training.py
+
+Interactive data-collection helper that uses `SensorDataCollector` to
+warm sensors, prompt for labels, and record labeled samples into a CSV
+for training.
+'''
+
 import os
 import sys
 

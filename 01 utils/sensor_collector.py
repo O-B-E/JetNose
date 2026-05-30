@@ -1,3 +1,12 @@
+'''
+sensor_collector.py
+
+Provides `SensorDataCollector`, a helper class that wraps I2C sensor
+access (temperature/humidity and multi-gas readings), CSV logging,
+and convenience methods for warm-up and purge checks used during
+data collection and inference.
+'''
+
 import sys
 import os
 import time

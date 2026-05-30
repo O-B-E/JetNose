@@ -1,3 +1,10 @@
+'''
+model_arch.py
+
+Defines the `NNetwork` architecture and helper functions to load
+and run inference from a saved checkpoint. 
+'''
+
 import torch
 import torch.nn as nn
 

@@ -1,4 +1,10 @@
 '''
+infer.py
+
+Real-time inference script that collects short windows of sensor
+readings, runs them through a trained classifier, and prints class
+probabilities.
+
 ! IMPORTANT !
 Before running this script export the following environment variable:
 export LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1

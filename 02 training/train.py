@@ -1,3 +1,11 @@
+'''
+train.py
+
+Training script that prepares data from a CSV, trains the `NNetwork`
+model, and saves a checkpoint containing the model state, scaler, and
+label encoder.
+'''
+
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.model_selection import train_test_split
 import torch
