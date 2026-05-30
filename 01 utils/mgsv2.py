@@ -1,3 +1,12 @@
+"""
+Multichannel Gas Sensor V2 Library
+
+This module provides a class interface for Grove - Multichannel Gas Sensor V2
+via I²C communication using smbus2.
+
+Based on the official library https://github.com/Seeed-Studio/Seeed_Arduino_MultiGas
+"""
+
 import time
 from smbus2 import SMBus, i2c_msg
 

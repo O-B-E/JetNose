@@ -3,6 +3,8 @@ AHT2x Temperature and Humidity Sensor Library
 
 This module provides a class interface for AHT20 and AHT21 sensors
 via I²C communication using smbus2.
+
+Based on the official library https://github.com/adafruit/Adafruit_AHTX0
 """
 
 import time
