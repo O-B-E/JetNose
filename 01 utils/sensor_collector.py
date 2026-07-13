@@ -11,6 +11,7 @@ import sys
 import os
 import time
 import csv
+import json
 from datetime import datetime
 from smbus2 import SMBus
 
@@ -28,7 +29,7 @@ class SensorDataCollector:
         self.warmup_time = warmup_time
         
         # Headers for CSV
-        self.headers = ['Timestamp', 'Temp', 'Hum', 'NO2_V', 'Eth_V', 'VOC_V', 'CO_V', 'Label']
+        self.headers = ['Timestamp', 'Temp', 'Hum', 'NO2_V', 'Eth_V', 'VOC_V', 'CO_V', 'Label', 'Prediction', 'Confidence', 'ClassProbabilities']
         
         # Initialize sensors
         self.csv_file = csv_file or os.path.join(os.path.dirname(__file__), '../csv/training_data.csv')
@@ -151,6 +152,39 @@ class SensorDataCollector:
         print(f"\nSaved {len(samples)} samples of '{label}' to {self.csv_file}")
         return samples
     
+    def log_inference_result(self, df_window, prediction, confidence, class_conf_dict):
+        """Append one inference window summary to the CSV log."""
+        self._ensure_csv_headers()
+
+        if df_window is None or df_window.empty:
+            temp = hum = no2 = eth = voc = co = 0.0
+        else:
+            temp = round(float(df_window['Temp'].mean()), 2)
+            hum = round(float(df_window['Hum'].mean()), 2)
+            no2 = round(float(df_window['NO2_V'].mean()), 2)
+            eth = round(float(df_window['Eth_V'].mean()), 2)
+            voc = round(float(df_window['VOC_V'].mean()), 2)
+            co = round(float(df_window['CO_V'].mean()), 2)
+
+        row = {
+            'Timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3],
+            'Temp': temp,
+            'Hum': hum,
+            'NO2_V': no2,
+            'Eth_V': eth,
+            'VOC_V': voc,
+            'CO_V': co,
+            'Label': prediction,
+            'Prediction': prediction,
+            'Confidence': round(float(confidence), 2),
+            'ClassProbabilities': json.dumps(class_conf_dict)
+        }
+
+        with open(self.csv_file, 'a', newline='') as f:
+            writer = csv.DictWriter(f, fieldnames=self.headers)
+            writer.writerow(row)
+            f.flush()
+
     def close(self):
         """Clean up resources"""
         if self.bus:

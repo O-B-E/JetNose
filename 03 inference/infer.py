@@ -112,7 +112,7 @@ def main():
 
     # Init collector (no CSV needed for inference, but reuse class)
     collector = SensorDataCollector(
-        csv_file=os.path.join(current_dir, 'csv/infer_log.csv'),
+        csv_file=os.path.join(current_dir, f'csv/infer_log{time.ctime().replace(" ","_")}.csv'),
         sample_freq_hz=4,
         samples_per_label=10,
         warmup_time=1,
@@ -131,6 +131,12 @@ def main():
             df_window = collect_window_as_df(collector, label="infer", num_samples=10)
             best_class, best_conf, class_conf_dict = predict_window(
                 model, scaler, label_encoder, df_window
+            )
+            collector.log_inference_result(
+                df_window,
+                best_class,
+                best_conf,
+                class_conf_dict,
             )
             pretty_print_confidences(class_conf_dict, best_class)
 
