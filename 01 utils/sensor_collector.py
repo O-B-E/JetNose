@@ -31,8 +31,11 @@ class SensorDataCollector:
         # Headers for CSV
         self.headers = ['Timestamp', 'Temp', 'Hum', 'NO2_V', 'Eth_V', 'VOC_V', 'CO_V', 'Label', 'Prediction', 'Confidence', 'ClassProbabilities']
         
+        # Initialize CSV file
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        self.csv_file = csv_file or os.path.join(os.path.dirname(__file__), f'../csv/training_data_{timestamp}.csv')
+
         # Initialize sensors
-        self.csv_file = csv_file or os.path.join(os.path.dirname(__file__), '../csv/training_data.csv')
         self.bus = None
         self.temp_sensor = None
         self.gas_sensor = None

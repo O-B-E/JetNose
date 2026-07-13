@@ -13,6 +13,7 @@ export LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libgomp.so.1
 import os
 import sys
 import time
+from datetime import datetime
 import torch
 import torch.nn.functional as F
 import pandas as pd
@@ -110,9 +111,11 @@ def main():
     
     model, scaler, label_encoder = load_model(path=model_path, device=DEVICE)
 
-    # Init collector (no CSV needed for inference, but reuse class)
+    # Init collector
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
     collector = SensorDataCollector(
-        csv_file=os.path.join(current_dir, f'csv/infer_log{time.ctime().replace(" ","_")}.csv'),
+        csv_file=os.path.join(current_dir, f'csv/infer_log{timestamp}.csv'),
         sample_freq_hz=4,
         samples_per_label=10,
         warmup_time=1,
