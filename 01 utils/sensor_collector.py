@@ -11,6 +11,8 @@ import os
 import time
 import csv
 import json
+import queue
+import threading
 from datetime import datetime
 from smbus2 import SMBus
 
@@ -51,6 +53,12 @@ class SensorDataCollector:
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         self.csv_file = csv_file or os.path.join(os.path.dirname(__file__), f'../csv/training_data_{timestamp}.csv')
 
+        # Asynchronous inference logging queue and worker thread
+        self.inference_queue = queue.Queue()
+        self._async_log_running = True
+        self.log_thread = threading.Thread(target=self._async_log_worker, daemon=True)
+        self.log_thread.start()
+
         # Initialize sensors
         self.bus = None
         self.temp_sensor = None
@@ -81,7 +89,23 @@ class SensorDataCollector:
         if not os.path.exists(self.csv_file):
             with open(self.csv_file, 'w', newline='') as f:
                 csv.DictWriter(f, fieldnames=self.headers).writeheader()
-    
+
+    def _async_log_worker(self):
+        """
+        Internal background worker thread for writing inference log entries to CSV asynchronously.
+        """
+        while self._async_log_running or not self.inference_queue.empty():
+            try:
+                row = self.inference_queue.get(timeout=0.5)
+                self._ensure_csv_headers()
+                with open(self.csv_file, 'a', newline='') as f:
+                    writer = csv.DictWriter(f, fieldnames=self.headers)
+                    writer.writerow(row)
+                    f.flush()
+                self.inference_queue.task_done()
+            except queue.Empty:
+                continue
+
     def warm_up(self):
         """
         Run sensor warm-up sequence with a console progress bar.
@@ -203,10 +227,10 @@ class SensorDataCollector:
     
     def log_inference_result(self, df_window, prediction, confidence, class_conf_dict):
         """
-        Append one inference window summary to the CSV log.
+        Append one inference window summary asynchronously to the CSV log queue.
 
-        Calculates average sensor values over the window and writes prediction, confidence,
-        and full class probability distributions to the log file.
+        Calculates average sensor values over the window and queues prediction, confidence,
+        and full class probability distributions for background writing without blocking.
 
         Parameters:
             df_window (pandas.DataFrame): Sliding window dataframe containing sensor readings
@@ -214,8 +238,6 @@ class SensorDataCollector:
             confidence (float): Confidence score or probability of predicted class
             class_conf_dict (dict): Dictionary mapping class names to confidence probabilities
         """
-        self._ensure_csv_headers()
-
         if df_window is None or df_window.empty:
             temp = hum = no2 = eth = voc = co = 0.0
         else:
@@ -240,15 +262,20 @@ class SensorDataCollector:
             'ClassProbabilities': json.dumps(class_conf_dict)
         }
 
-        with open(self.csv_file, 'a', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=self.headers)
-            writer.writerow(row)
-            f.flush()
+        # Non-blocking push to inference log queue
+        self.inference_queue.put_nowait(row)
 
     def close(self):
         """
-        Disconnect sensors and release I²C bus resources.
+        Disconnect sensors, flush inference log queue, and release I²C bus resources.
         """
+        # Signal background logging worker to finish and join thread
+        if hasattr(self, '_async_log_running') and self._async_log_running:
+            self._async_log_running = False
+            if hasattr(self, 'log_thread') and self.log_thread.is_alive():
+                self.log_thread.join(timeout=2.0)
+
         if self.bus:
             self.bus.close()
             print("Sensors disconnected.")
+
