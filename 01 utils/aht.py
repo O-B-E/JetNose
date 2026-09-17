@@ -169,27 +169,3 @@ class AHT2x:
             self.temperature = temp * 200.0 / 0x100000 - 50
             return True
         return False
-
-
-# Example Usage
-if __name__ == "__main__":
-    # Initialize I2C bus using smbus2 (bus 1 is standard for Jetson Nano)
-    bus = SMBus(1)
-    sensor = AHT2x(bus)
-
-    print("AHT2x Sensor Test (using smbus2)")
-    print("Press CTRL+C to stop\n")
-
-    try:
-        while True:
-            if sensor.is_ready:
-                print(f"Temperature: {sensor.temperature:.2f}°C")
-                print(f"Humidity:    {sensor.humidity:.2f}%\n")
-            else:
-                print("Sensor is busy or not calibrated.\n")
-            time.sleep(1)
-    except KeyboardInterrupt:
-        print("\nStopped by user")
-    finally:
-        bus.close()
-        print("I²C bus closed")

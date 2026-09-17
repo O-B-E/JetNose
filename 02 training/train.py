@@ -1,10 +1,11 @@
-'''
-train.py
+"""
+Scent Classification Model Training Pipeline
 
-Training script that prepares data from a CSV, trains the `NNetwork`
-model, and saves a checkpoint containing the model state, scaler, and
-label encoder.
-'''
+Provides functions for loading sensor data from CSV files, performing feature
+preprocessing and scaling, training the PyTorch neural network classifier,
+and saving complete checkpoints containing model weights, scaling parameters,
+and label encoders.
+"""
 
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.model_selection import train_test_split
@@ -28,7 +29,18 @@ except ImportError as e:
     print(f"Details: {e}")
     sys.exit(1)
 
+
 def prepare_data(csv_file, val_split=0.2):
+    """
+    Load sensor dataset from CSV, scale features, encode labels, and split into train/val sets.
+
+    Parameters:
+        csv_file (str): Path to CSV dataset file containing raw sensor telemetry
+        val_split (float): Ratio of dataset reserved for validation (default 0.2)
+
+    Returns:
+        tuple: (X_train, X_val, y_train, y_val, scaler, label_encoder)
+    """
     df = pd.read_csv(csv_file)
 
     feature_cols = ['Temp', 'Hum', 'NO2_V', 'Eth_V', 'VOC_V', 'CO_V']
@@ -53,7 +65,21 @@ def prepare_data(csv_file, val_split=0.2):
 
     return X_train, X_val, y_train, y_val, scaler, label_encoder
 
+
 def train_model(csv_file='csv/training_data.csv', num_epochs=300, lr=0.0005, val_split=0.2, batch_size=32):
+    """
+    Execute full training and validation loop for the scent classification model.
+
+    Parameters:
+        csv_file (str): Path to CSV training dataset file (default 'csv/training_data.csv')
+        num_epochs (int): Total number of training epochs (default 300)
+        lr (float): Learning rate for Adam optimizer (default 0.0005)
+        val_split (float): Ratio of dataset reserved for validation (default 0.2)
+        batch_size (int): Mini-batch size for DataLoaders (default 32)
+
+    Returns:
+        tuple: (model, scaler, label_encoder) trained PyTorch model and preprocessing artifacts
+    """
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Prepare data
@@ -111,7 +137,17 @@ def train_model(csv_file='csv/training_data.csv', num_epochs=300, lr=0.0005, val
     print('Training completed.')
     return model, scaler, label_encoder
 
+
 def save_model(model, scaler, label_encoder, path='model/scent_classifier.pth'):
+    """
+    Save trained model state dictionary along with scaler and label encoder to a file.
+
+    Parameters:
+        model (nn.Module): Trained PyTorch neural network model instance
+        scaler (StandardScaler): Feature scaler instance used during training
+        label_encoder (LabelEncoder): Label encoder instance used for target classes
+        path (str): Filepath where checkpoint should be saved (default 'model/scent_classifier.pth')
+    """
     # Create directory if it doesn't exist
     os.makedirs(os.path.dirname(path), exist_ok=True)
     torch.save({
@@ -123,10 +159,13 @@ def save_model(model, scaler, label_encoder, path='model/scent_classifier.pth'):
     }, path)
     print(f'Model saved to {path}')
 
-# Usage example with interactive prompts:
-csv_path = input("Enter CSV file path (default: csv/training_data.csv): ") or 'csv/training_data.csv'
-model_path = input("Enter model **save** path (default: model/scent_classifier.pth): ") or 'model/scent_classifier.pth'
 
-model, scaler, label_encoder = train_model(csv_file=csv_path)
-save_model(model, scaler, label_encoder, path=model_path)
+# Usage example with interactive prompts:
+if __name__ == "__main__":
+    csv_path = input("Enter CSV file path (default: csv/training_data.csv): ") or 'csv/training_data.csv'
+    model_path = input("Enter model **save** path (default: model/scent_classifier.pth): ") or 'model/scent_classifier.pth'
+
+    model, scaler, label_encoder = train_model(csv_file=csv_path)
+    save_model(model, scaler, label_encoder, path=model_path)
+
 

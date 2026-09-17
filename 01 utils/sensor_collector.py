@@ -1,11 +1,10 @@
-'''
-sensor_collector.py
+"""
+Sensor Data Collection and CSV Logging Utility
 
-Provides `SensorDataCollector`, a helper class that wraps I2C sensor
-access (temperature/humidity and multi-gas readings), CSV logging,
-and convenience methods for warm-up and purge checks used during
-data collection and inference.
-'''
+Provides the SensorDataCollector helper class to coordinate I²C sensor access
+(temperature, humidity, and multi-gas readings), handle CSV file creation and logging,
+and run interactive warm-up and purge baseline checks during sampling and inference.
+"""
 
 import sys
 import os
@@ -22,8 +21,25 @@ except ImportError as e:
     print(f"Error: Could not import sensor drivers. {e}")
     sys.exit(1)
 
+
 class SensorDataCollector:
+    """
+    Helper class for managing sensor hardware communication, sample collection, and logging.
+
+    Coordinates reading from AHT2x temperature/humidity sensors and MGSV2 multi-gas
+    sensors, writing measurements and model predictions to CSV files.
+    """
+
     def __init__(self, csv_file=None, sample_freq_hz=4, samples_per_label=100, warmup_time=1):
+        """
+        Initialize SensorDataCollector and set up sensors and CSV log file.
+
+        Parameters:
+            csv_file (str, optional): Target CSV filepath. If None, generates timestamped filename in ../csv/
+            sample_freq_hz (float): Data sampling frequency in Hertz (default 4 Hz)
+            samples_per_label (int): Default number of samples to collect per label (default 100)
+            warmup_time (int): Sensor preheat and warm-up duration in seconds (default 1)
+        """
         self.sample_interval = 1.0 / sample_freq_hz
         self.samples_per_label = samples_per_label
         self.warmup_time = warmup_time
@@ -45,7 +61,9 @@ class SensorDataCollector:
         self._ensure_csv_headers()
     
     def _initialize_sensors(self):
-        """Initialize I2C bus and sensors"""
+        """
+        Internal method to initialize I²C bus and connect temperature and gas sensors.
+        """
         try:
             self.bus = SMBus(1)
             self.temp_sensor = AHT2x(self.bus)
@@ -56,14 +74,21 @@ class SensorDataCollector:
             sys.exit(1)
     
     def _ensure_csv_headers(self):
-        """Create CSV file with headers if it doesn't exist"""
+        """
+        Internal method to create target CSV file with header row if it does not exist.
+        """
         os.makedirs(os.path.dirname(self.csv_file), exist_ok=True)
         if not os.path.exists(self.csv_file):
             with open(self.csv_file, 'w', newline='') as f:
                 csv.DictWriter(f, fieldnames=self.headers).writeheader()
     
     def warm_up(self):
-        """Warm-up sequence with progress bar"""
+        """
+        Run sensor warm-up sequence with a console progress bar.
+
+        Displays real-time gas sensor voltage readings until the specified warmup_time passes
+        or until interrupted by CTRL+C.
+        """
         print(f"\n{'='*80}")
         print(f"SENSOR WARM-UP ({self.warmup_time}s)")
         print("Press CTRL+C to skip")
@@ -92,7 +117,11 @@ class SensorDataCollector:
         print("\nWarm-up complete.\n")
     
     def purge_check(self):
-        """Wait for stable baseline readings"""
+        """
+        Perform continuous sensor reading display to monitor baseline air recovery.
+
+        Blocks and displays gas sensor voltages until user confirms baseline stability via CTRL+C.
+        """
         print(f"\n{'!'*80}")
         print("PURGE CHECK: Wait for stable baseline")
         print("Press CTRL+C when ready")
@@ -107,7 +136,15 @@ class SensorDataCollector:
             print("\nBaseline confirmed.")
     
     def collect_sample(self, label):
-        """Collect single sensor reading"""
+        """
+        Collect a single synchronous reading from temperature, humidity, and gas sensors.
+
+        Parameters:
+            label (str): Class or experiment label associated with the measurement
+
+        Returns:
+            dict: Dictionary containing timestamp, sensor values, and label
+        """
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
         
         t, h = 0.0, 0.0
@@ -129,7 +166,16 @@ class SensorDataCollector:
         }
     
     def collect_samples(self, label, num_samples=None):
-        """Collect multiple samples and save to CSV"""
+        """
+        Collect multiple sensor readings at fixed intervals and save them to CSV file.
+
+        Parameters:
+            label (str): Class or experiment label associated with the dataset
+            num_samples (int, optional): Number of samples to record (defaults to self.samples_per_label)
+
+        Returns:
+            list: List of dictionaries containing recorded sample data
+        """
         num_samples = num_samples or self.samples_per_label
         
         print(f"Recording {num_samples} samples of '{label}'...")
@@ -156,7 +202,18 @@ class SensorDataCollector:
         return samples
     
     def log_inference_result(self, df_window, prediction, confidence, class_conf_dict):
-        """Append one inference window summary to the CSV log."""
+        """
+        Append one inference window summary to the CSV log.
+
+        Calculates average sensor values over the window and writes prediction, confidence,
+        and full class probability distributions to the log file.
+
+        Parameters:
+            df_window (pandas.DataFrame): Sliding window dataframe containing sensor readings
+            prediction (str): Model's predicted class label
+            confidence (float): Confidence score or probability of predicted class
+            class_conf_dict (dict): Dictionary mapping class names to confidence probabilities
+        """
         self._ensure_csv_headers()
 
         if df_window is None or df_window.empty:
@@ -189,7 +246,9 @@ class SensorDataCollector:
             f.flush()
 
     def close(self):
-        """Clean up resources"""
+        """
+        Disconnect sensors and release I²C bus resources.
+        """
         if self.bus:
             self.bus.close()
             print("Sensors disconnected.")
