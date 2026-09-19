@@ -225,7 +225,7 @@ class SensorDataCollector:
         print(f"\nSaved {len(samples)} samples of '{label}' to {self.csv_file}")
         return samples
     
-    def log_inference_result(self, df_window, prediction, confidence, class_conf_dict):
+    def log_inference_result(self, df_window, prediction, confidence, class_conf_dict, label=''):
         """
         Append one inference window summary asynchronously to the CSV log queue.
 
@@ -256,7 +256,7 @@ class SensorDataCollector:
             'Eth_V': eth,
             'VOC_V': voc,
             'CO_V': co,
-            'Label': prediction,
+            'Label': label,
             'Prediction': prediction,
             'Confidence': round(float(confidence), 2),
             'ClassProbabilities': json.dumps(class_conf_dict)

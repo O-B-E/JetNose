@@ -13,6 +13,7 @@ Note:
 import os
 import sys
 import time
+import argparse
 from datetime import datetime
 import torch
 import torch.nn.functional as F
@@ -32,6 +33,22 @@ except ImportError as e:
     sys.exit(1)
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+
+def parse_args():
+    """
+    Parse command-line arguments for infer.py.
+
+    Returns:
+        argparse.Namespace: Parsed CLI options
+    """
+    parser = argparse.ArgumentParser(description="Real-Time Sensor Inference Pipeline")
+    parser.add_argument(
+        "--accuracy-test",
+        action="store_true",
+        help="Enable accuracy testing mode with ground truth tracking and post-run analysis"
+    )
+    return parser.parse_args()
 
 
 def collect_window_as_df(collector, label="inference", num_samples=10):
@@ -136,6 +153,8 @@ def main():
     """
     Main execution loop for real-time sensor sampling, model loading, and live inference logging.
     """
+    args = parse_args()
+
     # Load model + preprocessing
     model_path = input(
         "Enter model path or press Enter for default: "
@@ -144,6 +163,19 @@ def main():
     print("Loading Model...")
     
     model, scaler, label_encoder = load_model(path=model_path, device=DEVICE)
+
+    # Initial Ground Truth Prompt if accuracy-test mode
+    current_ground_truth = None
+    if args.accuracy_test:
+        print("\n" + "=" * 55)
+        print("ACCURACY TESTING MODE ACTIVE")
+        print("Press CTRL+C during collection to pause and update Ground Truth, or 'q' to quit.")
+        print("=" * 55)
+        while not current_ground_truth:
+            current_ground_truth = input("Enter initial ground truth label: ").strip()
+            if not current_ground_truth:
+                print("Ground truth label cannot be empty.")
+        print(f"Initial ground truth set to: '{current_ground_truth}'\n")
 
     # Init collector
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -160,27 +192,73 @@ def main():
         print("Entering real-time inference loop. CTRL+C to exit.\n")
 
         while True:
-            # input("Press ENTER to capture 10 samples and infer...")
+            try:
+                active_label = current_ground_truth if args.accuracy_test else "infer"
+                df_window = collect_window_as_df(collector, label=active_label, num_samples=10)
+                best_class, best_conf, class_conf_dict = predict_window(
+                    model, scaler, label_encoder, df_window
+                )
+                if args.accuracy_test:
+                    collector.log_inference_result(
+                        df_window,
+                        best_class,
+                        best_conf,
+                        class_conf_dict,
+                        label=current_ground_truth,
+                    )
+                else:
+                    collector.log_inference_result(
+                        df_window,
+                        best_class,
+                        best_conf,
+                        class_conf_dict,
+                    )
+                pretty_print_confidences(class_conf_dict, best_class)
+                if args.accuracy_test:
+                    is_match = (best_class.lower() == current_ground_truth.lower())
+                    status_symbol = "MATCH" if is_match else "MISMATCH"
+                    print(f"[Ground Truth: '{current_ground_truth}' | Prediction: '{best_class}' -> {status_symbol}]\n")
 
-            # Optionally show purge/baseline between windows
-            # collector.purge_check()
-
-            df_window = collect_window_as_df(collector, label="infer", num_samples=10)
-            best_class, best_conf, class_conf_dict = predict_window(
-                model, scaler, label_encoder, df_window
-            )
-            collector.log_inference_result(
-                df_window,
-                best_class,
-                best_conf,
-                class_conf_dict,
-            )
-            pretty_print_confidences(class_conf_dict, best_class)
+            except KeyboardInterrupt:
+                if not args.accuracy_test:
+                    raise
+                print("\n\n" + "=" * 55)
+                print("PAUSED - Sensor collection & classification paused.")
+                print("=" * 55)
+                try:
+                    new_label = input("Enter new ground truth label (or 'q' to stop & analyze): ").strip()
+                except (KeyboardInterrupt, EOFError):
+                    print("\nExiting accuracy test...")
+                    break
+                if new_label.lower() == 'q':
+                    print("Exiting accuracy test...")
+                    break
+                while not new_label:
+                    try:
+                        new_label = input("Label cannot be empty. Enter ground truth (or 'q' to stop): ").strip()
+                    except (KeyboardInterrupt, EOFError):
+                        new_label = 'q'
+                        break
+                    if new_label.lower() == 'q':
+                        break
+                if new_label.lower() == 'q':
+                    print("Exiting accuracy test...")
+                    break
+                current_ground_truth = new_label
+                print(f"Ground truth updated to: '{current_ground_truth}'. Resuming collection...\n")
 
     except KeyboardInterrupt:
         print("\nInference stopped by user.")
     finally:
         collector.close()
+        if args.accuracy_test:
+            try:
+                from analysis import analyze_accuracy_log
+                analyze_accuracy_log(collector.csv_file)
+            except ImportError:
+                print("Error: Could not import analyze_accuracy_log from analysis module.")
+            except Exception as e:
+                print(f"Error during post-run analysis: {e}")
 
 
 if __name__ == "__main__":
