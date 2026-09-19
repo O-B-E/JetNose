@@ -160,7 +160,7 @@ def main():
         "Enter model path or press Enter for default: "
     ).strip() or os.path.join(current_dir, "../02 training/model/scent_classifier.pth")
     
-    print("Loading Model...")
+    print(f"Loading Model from path: {model_path}")
     
     model, scaler, label_encoder = load_model(path=model_path, device=DEVICE)
 
@@ -181,7 +181,7 @@ def main():
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     collector = SensorDataCollector(
-        csv_file=os.path.join(current_dir, f'csv/infer_log{timestamp}.csv'),
+        csv_file=os.path.join(current_dir, f'csv/{"accuracy_test" if args.accuracy_test else "infer_log"}{timestamp}.csv'),
         sample_freq_hz=4,
         samples_per_label=10,
         warmup_time=1,
@@ -193,7 +193,7 @@ def main():
 
         while True:
             try:
-                active_label = current_ground_truth if args.accuracy_test else "infer"
+                active_label = current_ground_truth if args.accuracy_test else ''
                 df_window = collect_window_as_df(collector, label=active_label, num_samples=10)
                 best_class, best_conf, class_conf_dict = predict_window(
                     model, scaler, label_encoder, df_window
@@ -254,7 +254,13 @@ def main():
         if args.accuracy_test:
             try:
                 from analysis import analyze_accuracy_log
-                analyze_accuracy_log(collector.csv_file)
+                result = analyze_accuracy_log(collector.csv_file)
+                if result:
+                    import json
+                    with open(collector.csv_file, 'a', encoding='utf-8') as f:
+                        f.write("\n\n# --- ACCURACY TEST ANALYSIS RESULT ---\n")
+                        f.write(json.dumps(result, indent=2) + "\n")
+                    print(f"Analysis results saved to: {collector.csv_file}")
             except ImportError:
                 print("Error: Could not import analyze_accuracy_log from analysis module.")
             except Exception as e:

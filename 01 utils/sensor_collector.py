@@ -259,7 +259,7 @@ class SensorDataCollector:
             'Label': label,
             'Prediction': prediction,
             'Confidence': round(float(confidence), 2),
-            'ClassProbabilities': json.dumps(class_conf_dict)
+            'ClassProbabilities': "{" + ", ".join(f"{k}:{v:.2f}%" for k, v in class_conf_dict.items()) + "}"
         }
 
         # Non-blocking push to inference log queue
