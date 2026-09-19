@@ -15,6 +15,7 @@ import sys
 import time
 import argparse
 from datetime import datetime
+from unittest import result
 import torch
 import torch.nn.functional as F
 import pandas as pd
@@ -181,7 +182,7 @@ def main():
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     collector = SensorDataCollector(
-        csv_file=os.path.join(current_dir, f'csv/{"accuracy_test" if args.accuracy_test else "infer_log"}{timestamp}.csv'),
+        csv_file=os.path.join(current_dir, f'csv/{"accuracy_test" if args.accuracy_test else "infer_log"}_{timestamp}.csv'),
         sample_freq_hz=4,
         samples_per_label=10,
         warmup_time=1,
@@ -255,12 +256,11 @@ def main():
             try:
                 from analysis import analyze_accuracy_log
                 result = analyze_accuracy_log(collector.csv_file)
+                
                 if result:
-                    import json
                     with open(collector.csv_file, 'a', encoding='utf-8') as f:
-                        f.write("\n\n# --- ACCURACY TEST ANALYSIS RESULT ---\n")
-                        f.write(json.dumps(result, indent=2) + "\n")
-                    print(f"Analysis results saved to: {collector.csv_file}")
+                        f.write(result)
+                    print(f"\Analysis results saved to: {collector.csv_file}")
             except ImportError:
                 print("Error: Could not import analyze_accuracy_log from analysis module.")
             except Exception as e:

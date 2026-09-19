@@ -157,42 +157,37 @@ def analyze_accuracy_log(log_file_path):
         }
 
     # 4. Formatted Terminal Display
-    print("\n" + "=" * 65)
-    print("           ACCURACY & RECOVERY DELAY REPORT")
-    print("=" * 65)
-    print(f"Log File: {os.path.abspath(log_file_path)}")
-    print(f"Total Predictions:    {total_predictions}")
-    print(f"Correct Predictions:  {total_correct}")
-    print(f"Overall Accuracy:     {overall_accuracy:.2f}%\n")
+    lines = [
+        f"\n\n{'=' * 65}",
+        "ACCURACY TEST ANALYSIS",
+        f"{'=' * 65}\n",
+        f"{'Segment':<9} | {'Ground Truth':<15} | {'Initial':<11} | {'Recovery Delay':<15}",
+        "-" * 65,
+    ]
 
-    print("-" * 65)
-    print(f"{'Segment':<9} | {'Ground Truth':<15} | {'Initial':<11} | {'Recovery Delay':<15}")
-    print("-" * 65)
     for s in segment_results:
         init_str = "MATCH" if s['initial_match'] else "MISMATCH"
-        if s['delay_seconds'] is not None:
-            delay_str = f"{s['delay_seconds']:.2f}s"
-        else:
-            delay_str = "NO RECOVERY"
-        print(f"{s['segment_id']:<9} | {s['label']:<15} | {init_str:<11} | {delay_str:<15}")
+        delay_str = f"{s['delay_seconds']:.2f}s" if s['delay_seconds'] is not None else "NO RECOVERY"
+        lines.append(f"{s['segment_id']:<9} | {s['label']:<15} | {init_str:<11} | {delay_str:<15}")
 
-    print("-" * 65)
-    print(f"{'Label':<15} | {'Occurrences':<12} | {'Initial Mismatches':<20} | {'Mean Recovery Delay':<20}")
-    print("-" * 65)
+    lines.extend([
+        "-" * 65,
+        f"{'Label':<15} | {'Occurrences':<12} | {'Initial Mismatches':<20} | {'Mean Recovery Delay':<20}",
+        "-" * 65,
+    ])
+
     for lbl, stats in label_summary.items():
         occ = stats['occurrences']
         mismatches = stats['misclassified_occurrences']
         mean_delay = stats['mean_recovery_delay_sec']
-        print(f"{lbl:<15} | {occ:<12} | {mismatches:<20} | {mean_delay:.2f}s")
-    print("=" * 65 + "\n")
+        lines.append(f"{lbl:<15} | {occ:<12} | {mismatches:<20} | {mean_delay:.2f}s")
 
-    return {
-        'total_predictions': total_predictions,
-        'total_correct': total_correct,
-        'overall_accuracy_pct': overall_accuracy,
-        'segments': segment_results,
-        'label_summary': label_summary
-    }
+    lines.append("=" * 65 + "\n")
+
+    analysis_output = "\n".join(lines)
+    print(analysis_output)
+
+    return analysis_output
 
 
 if __name__ == "__main__":
