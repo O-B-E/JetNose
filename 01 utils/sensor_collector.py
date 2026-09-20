@@ -47,7 +47,8 @@ class SensorDataCollector:
         self.warmup_time = warmup_time
         
         # Headers for CSV
-        self.headers = ['Timestamp', 'Temp', 'Hum', 'NO2_V', 'Eth_V', 'VOC_V', 'CO_V', 'Label', 'Prediction', 'Confidence', 'ClassProbabilities']
+        self.training_headers = ['Timestamp', 'Temp', 'Hum', 'NO2_V', 'Eth_V', 'VOC_V', 'CO_V', 'Label']
+        self.inference_headers = self.training_headers + ['Prediction', 'Confidence', 'ClassProbabilities']
         
         # Initialize CSV file
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -81,14 +82,14 @@ class SensorDataCollector:
             print(f"Error initializing sensors: {e}")
             sys.exit(1)
     
-    def _ensure_csv_headers(self):
+    def _ensure_csv_headers(self, headers=None):
         """
         Internal method to create target CSV file with header row if it does not exist.
         """
         os.makedirs(os.path.dirname(self.csv_file), exist_ok=True)
         if not os.path.exists(self.csv_file):
             with open(self.csv_file, 'w', newline='') as f:
-                csv.DictWriter(f, fieldnames=self.headers).writeheader()
+                csv.DictWriter(f, fieldnames=headers or self.training_headers).writeheader()
 
     def _async_log_worker(self):
         """
@@ -99,7 +100,7 @@ class SensorDataCollector:
                 row = self.inference_queue.get(timeout=0.5)
                 self._ensure_csv_headers()
                 with open(self.csv_file, 'a', newline='') as f:
-                    writer = csv.DictWriter(f, fieldnames=self.headers)
+                    writer = csv.DictWriter(f, fieldnames=self.inference_headers)
                     writer.writerow(row)
                     f.flush()
                 self.inference_queue.task_done()
@@ -206,7 +207,7 @@ class SensorDataCollector:
         
         samples = []
         with open(self.csv_file, 'a', newline='') as f:
-            writer = csv.DictWriter(f, fieldnames=self.headers)
+            writer = csv.DictWriter(f, fieldnames=self.training_headers)
             
             for i in range(num_samples):
                 cycle_start = time.time()
