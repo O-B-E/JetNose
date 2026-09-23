@@ -170,7 +170,8 @@ def main():
     if args.accuracy_test:
         print("\n" + "=" * 55)
         print("ACCURACY TESTING MODE ACTIVE")
-        print("Press CTRL+C during collection to pause and update Ground Truth, or 'q' to quit.")
+        print("For each label, 5 rounds (50 samples) are collected and classified,")
+        print("then you are prompted for the next label. Enter 'q' to stop & analyze.")
         print("=" * 55)
         while not current_ground_truth:
             current_ground_truth = input("Enter initial ground truth label: ").strip()
@@ -192,14 +193,21 @@ def main():
         collector.warm_up()
         print("Entering real-time inference loop. CTRL+C to exit.\n")
 
-        while True:
-            try:
-                active_label = current_ground_truth if args.accuracy_test else ''
-                df_window = collect_window_as_df(collector, label=active_label, num_samples=10)
-                best_class, best_conf, class_conf_dict = predict_window(
-                    model, scaler, label_encoder, df_window
-                )
-                if args.accuracy_test:
+        if args.accuracy_test:
+            ROUNDS_PER_LABEL = 5
+            SAMPLES_PER_ROUND = 10
+            while True:
+                # Run a fixed batch of classification rounds for the current label.
+                print(f"\nCollecting {ROUNDS_PER_LABEL} rounds "
+                      f"({ROUNDS_PER_LABEL * SAMPLES_PER_ROUND} samples) "
+                      f"for ground truth '{current_ground_truth}'...\n")
+                for round_idx in range(ROUNDS_PER_LABEL):
+                    df_window = collect_window_as_df(
+                        collector, label=current_ground_truth, num_samples=SAMPLES_PER_ROUND
+                    )
+                    best_class, best_conf, class_conf_dict = predict_window(
+                        model, scaler, label_encoder, df_window
+                    )
                     collector.log_inference_result(
                         df_window,
                         best_class,
@@ -207,32 +215,18 @@ def main():
                         class_conf_dict,
                         label=current_ground_truth,
                     )
-                else:
-                    collector.log_inference_result(
-                        df_window,
-                        best_class,
-                        best_conf,
-                        class_conf_dict,
-                    )
-                pretty_print_confidences(class_conf_dict, best_class)
-                if args.accuracy_test:
+                    pretty_print_confidences(class_conf_dict, best_class)
                     is_match = (best_class.lower() == current_ground_truth.lower())
                     status_symbol = "MATCH" if is_match else "MISMATCH"
-                    print(f"[Ground Truth: '{current_ground_truth}' | Prediction: '{best_class}' -> {status_symbol}]\n")
+                    print(f"[Round {round_idx + 1}/{ROUNDS_PER_LABEL} | "
+                          f"Ground Truth: '{current_ground_truth}' | "
+                          f"Prediction: '{best_class}' -> {status_symbol}]\n")
 
-            except KeyboardInterrupt:
-                if not args.accuracy_test:
-                    raise
-                print("\n\n" + "=" * 55)
-                print("PAUSED - Sensor collection & classification paused.")
-                print("=" * 55)
+                # Prompt for the next label before starting the next batch.
                 try:
-                    new_label = input("Enter new ground truth label (or 'q' to stop & analyze): ").strip()
+                    new_label = input("Enter next ground truth label (or 'q' to stop & analyze): ").strip()
                 except (KeyboardInterrupt, EOFError):
                     print("\nExiting accuracy test...")
-                    break
-                if new_label.lower() == 'q':
-                    print("Exiting accuracy test...")
                     break
                 while not new_label:
                     try:
@@ -240,13 +234,24 @@ def main():
                     except (KeyboardInterrupt, EOFError):
                         new_label = 'q'
                         break
-                    if new_label.lower() == 'q':
-                        break
                 if new_label.lower() == 'q':
                     print("Exiting accuracy test...")
                     break
                 current_ground_truth = new_label
-                print(f"Ground truth updated to: '{current_ground_truth}'. Resuming collection...\n")
+                print(f"Ground truth updated to: '{current_ground_truth}'.")
+        else:
+            while True:
+                df_window = collect_window_as_df(collector, label='', num_samples=10)
+                best_class, best_conf, class_conf_dict = predict_window(
+                    model, scaler, label_encoder, df_window
+                )
+                collector.log_inference_result(
+                    df_window,
+                    best_class,
+                    best_conf,
+                    class_conf_dict,
+                )
+                pretty_print_confidences(class_conf_dict, best_class)
 
     except KeyboardInterrupt:
         print("\nInference stopped by user.")
