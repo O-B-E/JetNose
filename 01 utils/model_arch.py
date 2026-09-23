@@ -81,14 +81,14 @@ class ScentCNN(nn.Module):
             nn.Conv1d(32, 64, kernel_size=3, padding=1),
             nn.BatchNorm1d(64),
             nn.ReLU(),
-            nn.Dropout1d(dropout_rate),
+            nn.Dropout(dropout_rate),
             nn.MaxPool1d(kernel_size=2)
         )
         self.block2 = nn.Sequential(
             nn.Conv1d(64, 128, kernel_size=3, padding=1),
             nn.BatchNorm1d(128),
             nn.ReLU(),
-            nn.Dropout1d(dropout_rate),
+            nn.Dropout(dropout_rate),
             nn.MaxPool1d(kernel_size=2)
         )
         self.block3 = nn.Sequential(
