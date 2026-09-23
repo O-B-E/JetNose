@@ -14,6 +14,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 import pandas as pd
+import copy
 import os
 import sys
 from datetime import datetime
@@ -24,7 +25,8 @@ utils_path = os.path.join(current_dir, '../01 utils')
 sys.path.append(utils_path)
 
 try:
-    from model_arch import NNetwork
+    from model_arch import NNetwork, ScentCNN
+    ARCH_MAP = {'small': NNetwork, 'robust': ScentCNN}
 except ImportError as e:
     print(f"\nError: Failed to import Neural Network architecture.")
     print(f"Details: {e}")
@@ -67,7 +69,7 @@ def prepare_data(csv_file, val_split=0.2):
     return X_train, X_val, y_train, y_val, scaler, label_encoder
 
 
-def train_model(csv_file='csv/training_data.csv', num_epochs=300, lr=0.0005, val_split=0.2, batch_size=32, history_dir='logs'):
+def train_model(csv_file='csv/training_data.csv', num_epochs=300, lr=0.0005, val_split=0.2, batch_size=32, history_dir='logs', arch='small', patience=30):
     """
     Execute full training and validation loop for the scent classification model.
 
@@ -78,6 +80,8 @@ def train_model(csv_file='csv/training_data.csv', num_epochs=300, lr=0.0005, val
         val_split (float): Ratio of dataset reserved for validation (default 0.2)
         batch_size (int): Mini-batch size for DataLoaders (default 32)
         history_dir (str): Directory (relative to this script) for per-epoch history CSVs (default 'logs')
+        arch (str): Model architecture to use (default 'small')
+        patience (int): Epochs without val-loss improvement before early stopping (default 30)
 
     Returns:
         tuple: (model, scaler, label_encoder) trained PyTorch model and preprocessing artifacts
@@ -95,15 +99,19 @@ def train_model(csv_file='csv/training_data.csv', num_epochs=300, lr=0.0005, val
 
     # Initialize model
     num_classes = len(label_encoder.classes_)
-    model = NNetwork(num_features=40, num_classes=num_classes).to(device)
+    model = ARCH_MAP.get(arch, NNetwork)(num_features=40, num_classes=num_classes).to(device)
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
     history = []
+    best_val_loss = float('inf')
+    best_state = copy.deepcopy(model.state_dict())
+    best_epoch = 0
+    epochs_no_improve = 0
 
     # Training loop
-    print(f'Started Training (arch=NNetwork, features=40, classes={num_classes})')
+    print(f'Started Training (arch={arch}, features=40, classes={num_classes})')
     print(f'Split sizes -> train: {len(y_train)}, val: {len(y_val)}')
 
     for epoch in range(num_epochs):
@@ -145,12 +153,29 @@ def train_model(csv_file='csv/training_data.csv', num_epochs=300, lr=0.0005, val
             'lr': optimizer.param_groups[0]['lr'],
         })
 
+        # Early stopping / best-checkpoint tracking.
+        if val_loss < best_val_loss - 1e-5:
+            best_val_loss = val_loss
+            best_state = copy.deepcopy(model.state_dict())
+            best_epoch = epoch + 1
+            epochs_no_improve = 0
+        else:
+            epochs_no_improve += 1
+
         if (epoch + 1) % 10 == 0 or epoch == 0:
             print(f'Epoch [{epoch+1}/{num_epochs}] '
                   f'Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | '
                   f'Val Acc: {val_acc:.2f}% | LR: {optimizer.param_groups[0]["lr"]:.2e}')
 
-    print('Training completed.')
+        if epochs_no_improve >= patience:
+            print(f'Early stopping at epoch {epoch+1} '
+                  f'(no val-loss improvement for {patience} epochs).')
+            break
+
+    # Restore the best weights before saving.
+    model.load_state_dict(best_state)
+    print(f'Training completed. Restored best model from epoch {best_epoch} '
+          f'(val loss {best_val_loss:.4f}).')
 
     # Persist per-epoch history.
     hist_dir = os.path.join(current_dir, history_dir)
@@ -188,9 +213,10 @@ def save_model(model, scaler, label_encoder, path='model/scent_classifier.pth'):
 # Usage example with interactive prompts:
 if __name__ == "__main__":
     csv_path = input("Enter CSV file path (default: csv/training_data.csv): ") or 'csv/training_data.csv'
+    arch = input("Enter model architecture (default: small): ") or 'small'
     model_path = input("Enter model **save** path (default: model/scent_classifier.pth): ") or 'model/scent_classifier.pth'
 
-    model, scaler, label_encoder = train_model(csv_file=csv_path)
+    model, scaler, label_encoder = train_model(csv_file=csv_path, arch=arch)
     save_model(model, scaler, label_encoder, path=model_path)
 
 
