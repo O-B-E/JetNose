@@ -164,7 +164,7 @@ def main():
     
     print(f"Loading Model from path: {model_path}")
     
-    model, scaler, label_encoder = load_model(path=model_path, device=DEVICE)
+    model, arch_name, scaler, label_encoder = load_model(path=model_path, device=DEVICE)
 
     # Initial Ground Truth Prompt if accuracy-test mode
     current_ground_truth = None
@@ -184,7 +184,7 @@ def main():
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     collector = SensorDataCollector(
-        csv_file=os.path.join(current_dir, f'csv/{"accuracy_test" if args.accuracy_test else "infer_log"}_{timestamp}.csv'),
+        csv_file=os.path.join(current_dir, f'csv/{"accuracy_test" if args.accuracy_test else "infer_log"}_{arch_name}_{timestamp}.csv'),
         sample_freq_hz=4,
         samples_per_label=10,
         warmup_time=1,

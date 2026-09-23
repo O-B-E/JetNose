@@ -213,12 +213,12 @@ ARCHITECTURES = {
 }
 
 
-def load_model(path='model/scent_classifier.pth', device=None):
+def load_model(path='model/CNNsmall.pth', device=None):
     """
     Load saved PyTorch model checkpoint along with feature scaler and label encoder.
 
     Parameters:
-        path (str): Path to saved PyTorch checkpoint file (default 'model/scent_classifier.pth')
+        path (str): Path to saved PyTorch checkpoint file (default 'model/CNNsmall.pth')
         device (torch.device, optional): Hardware device to run model on (CPU or CUDA)
 
     Returns:
@@ -243,7 +243,7 @@ def load_model(path='model/scent_classifier.pth', device=None):
     label_encoder = checkpoint['label_encoder']
 
     print(f'Model loaded (arch={arch_name}).')
-    return model, scaler, label_encoder
+    return model, arch_name, scaler, label_encoder
 
 
 def predict(model, scaler, label_encoder, new_data_df, device=None):
