@@ -16,6 +16,7 @@ from torch.utils.data import DataLoader, TensorDataset
 import pandas as pd
 import os
 import sys
+from datetime import datetime
 
 # Importing utils
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -66,7 +67,7 @@ def prepare_data(csv_file, val_split=0.2):
     return X_train, X_val, y_train, y_val, scaler, label_encoder
 
 
-def train_model(csv_file='csv/training_data.csv', num_epochs=300, lr=0.0005, val_split=0.2, batch_size=32):
+def train_model(csv_file='csv/training_data.csv', num_epochs=300, lr=0.0005, val_split=0.2, batch_size=32, history_dir='logs'):
     """
     Execute full training and validation loop for the scent classification model.
 
@@ -76,6 +77,7 @@ def train_model(csv_file='csv/training_data.csv', num_epochs=300, lr=0.0005, val
         lr (float): Learning rate for Adam optimizer (default 0.0005)
         val_split (float): Ratio of dataset reserved for validation (default 0.2)
         batch_size (int): Mini-batch size for DataLoaders (default 32)
+        history_dir (str): Directory (relative to this script) for per-epoch history CSVs (default 'logs')
 
     Returns:
         tuple: (model, scaler, label_encoder) trained PyTorch model and preprocessing artifacts
@@ -98,8 +100,12 @@ def train_model(csv_file='csv/training_data.csv', num_epochs=300, lr=0.0005, val
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
+    history = []
+
     # Training loop
-    print('Started Training')
+    print(f'Started Training (arch=NNetwork, features=40, classes={num_classes})')
+    print(f'Split sizes -> train: {len(y_train)}, val: {len(y_val)}')
+
     for epoch in range(num_epochs):
         # Training phase
         model.train()
@@ -112,6 +118,7 @@ def train_model(csv_file='csv/training_data.csv', num_epochs=300, lr=0.0005, val
             loss.backward()
             optimizer.step()
             train_loss += loss.item()
+        train_loss /= max(len(train_loader), 1)
 
         # Validation phase
         model.eval()
@@ -127,14 +134,32 @@ def train_model(csv_file='csv/training_data.csv', num_epochs=300, lr=0.0005, val
                 _, predicted = torch.max(outputs.data, 1)
                 total += labels.size(0)
                 correct += (predicted == labels).sum().item()
+        val_loss /= max(len(val_loader), 1)
+        val_acc = 100.0 * correct / max(total, 1)
 
-        if (epoch + 1) % 50 == 0:
-            print(f'Epoch [{epoch+1}/{num_epochs}], '
-                  f'Train Loss: {train_loss/len(train_loader):.4f}, '
-                  f'Val Loss: {val_loss/len(val_loader):.4f}, '
-                  f'Val Acc: {100 * correct / total:.2f}%')
+        history.append({
+            'epoch': epoch + 1,
+            'train_loss': train_loss,
+            'val_loss': val_loss,
+            'val_acc': val_acc,
+            'lr': optimizer.param_groups[0]['lr'],
+        })
+
+        if (epoch + 1) % 10 == 0 or epoch == 0:
+            print(f'Epoch [{epoch+1}/{num_epochs}] '
+                  f'Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} | '
+                  f'Val Acc: {val_acc:.2f}% | LR: {optimizer.param_groups[0]["lr"]:.2e}')
 
     print('Training completed.')
+
+    # Persist per-epoch history.
+    hist_dir = os.path.join(current_dir, history_dir)
+    os.makedirs(hist_dir, exist_ok=True)
+    stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    hist_path = os.path.join(hist_dir, f'train_history_{stamp}.csv')
+    pd.DataFrame(history).to_csv(hist_path, index=False)
+    print(f'Training history saved to {hist_path}')
+
     return model, scaler, label_encoder
 
 
