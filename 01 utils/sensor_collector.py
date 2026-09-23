@@ -32,7 +32,7 @@ class SensorDataCollector:
     sensors, writing measurements and model predictions to CSV files.
     """
 
-    def __init__(self, csv_file=None, sample_freq_hz=4, samples_per_label=100, warmup_time=1):
+    def __init__(self, csv_file=None, sample_freq_hz=4, samples_per_label=100, warmup_time=1, log_mode='training'):
         """
         Initialize SensorDataCollector and set up sensors and CSV log file.
 
@@ -41,14 +41,22 @@ class SensorDataCollector:
             sample_freq_hz (float): Data sampling frequency in Hertz (default 4 Hz)
             samples_per_label (int): Default number of samples to collect per label (default 100)
             warmup_time (int): Sensor preheat and warm-up duration in seconds (default 1)
+            log_mode (str): 'training' creates the CSV with training headers; 'inference'
+                creates it with the extended prediction headers so inference logging
+                (log_inference_result) and downstream analysis line up (default 'training')
         """
         self.sample_interval = 1.0 / sample_freq_hz
         self.samples_per_label = samples_per_label
         self.warmup_time = warmup_time
-        
+
         # Headers for CSV
         self.training_headers = ['Timestamp', 'Temp', 'Hum', 'NO2_V', 'Eth_V', 'VOC_V', 'CO_V', 'Label']
         self.inference_headers = self.training_headers + ['Prediction', 'Confidence', 'ClassProbabilities']
+
+        # Header row used when creating the CSV file. Must match the rows actually
+        # written: the async worker writes inference rows, so inference logging needs
+        # the extended header or the columns will be misaligned for analysis.
+        self.default_headers = self.inference_headers if log_mode == 'inference' else self.training_headers
         
         # Initialize CSV file
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -89,7 +97,7 @@ class SensorDataCollector:
         os.makedirs(os.path.dirname(self.csv_file), exist_ok=True)
         if not os.path.exists(self.csv_file):
             with open(self.csv_file, 'w', newline='') as f:
-                csv.DictWriter(f, fieldnames=headers or self.training_headers).writeheader()
+                csv.DictWriter(f, fieldnames=headers or self.default_headers).writeheader()
 
     def _async_log_worker(self):
         """

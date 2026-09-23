@@ -187,6 +187,7 @@ def main():
         sample_freq_hz=4,
         samples_per_label=10,
         warmup_time=1,
+        log_mode='inference',
     )
 
     try:
