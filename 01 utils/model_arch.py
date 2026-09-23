@@ -1,7 +1,7 @@
 """
 Neural Network Architecture and Inference Helper Utilities
 
-Defines the NNetwork PyTorch neural network model architecture alongside
+Defines the ScentCNNsmall PyTorch neural network model architecture alongside
 helper functions for loading model checkpoints and performing inference
 on new sensor data.
 """
@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 
 
-class NNetwork(nn.Module):
+class ScentCNNsmall(nn.Module):
     """
     Neural network model architecture for scent classification.
 
@@ -20,14 +20,14 @@ class NNetwork(nn.Module):
 
     def __init__(self, num_features=40, num_classes=5, dropout_rate=0.25):
         """
-        Initialize the NNetwork model.
+        Initialize the ScentCNNsmall model.
 
         Parameters:
             num_features (int): Number of input features (default 40)
             num_classes (int): Number of target output classes (default 5)
             dropout_rate (float): Probability of dropping out nodes during training (default 0.25)
         """
-        super(NNetwork, self).__init__()
+        super(ScentCNNsmall, self).__init__()
         self.input_layer = nn.Linear(num_features, 40)
         self.hidden_layer = nn.Linear(40, 20)
         self.output_layer = nn.Linear(20, num_classes)
@@ -52,7 +52,7 @@ class NNetwork(nn.Module):
         return x
 
 
-class ScentCNN(nn.Module):
+class ScentCNNrobust(nn.Module):
     """
     1D Convolutional Neural Network architecture for scent classification.
 
@@ -63,7 +63,7 @@ class ScentCNN(nn.Module):
 
     def __init__(self, num_features=40, num_classes=5, in_channels=1, dropout_rate=0.25):
         """
-        Initialize the ScentCNN model.
+        Initialize the ScentCNNrobust model.
 
         Parameters:
             num_features (int): Number of input features/sequence length (default 40)
@@ -71,7 +71,7 @@ class ScentCNN(nn.Module):
             in_channels (int): Number of input sensor channels (default 1)
             dropout_rate (float): Probability of dropping out nodes during training (default 0.25)
         """
-        super(ScentCNN, self).__init__()
+        super(ScentCNNrobust, self).__init__()
         self.stem = nn.Sequential(
             nn.Conv1d(in_channels, 32, kernel_size=3, padding=1),
             nn.BatchNorm1d(32),
@@ -206,8 +206,8 @@ class ScentMLPRobust(nn.Module):
 
 # Registry mapping checkpoint architecture names to their classes.
 ARCHITECTURES = {
-    'NNetwork': NNetwork,
-    'ScentCNN': ScentCNN,
+    'ScentCNNsmall': ScentCNNsmall,
+    'ScentCNNrobust': ScentCNNrobust,
     'ScentMLPSmall': ScentMLPSmall,
     'ScentMLPRobust': ScentMLPRobust,
 }
@@ -229,9 +229,9 @@ def load_model(path='model/scent_classifier.pth', device=None):
 
     checkpoint = torch.load(path, map_location=device)
 
-    # Backward compatible: older checkpoints have no 'arch' key -> NNetwork.
-    arch_name = checkpoint.get('arch', 'NNetwork')
-    model_cls = ARCHITECTURES.get(arch_name, NNetwork)
+    # Backward compatible: older checkpoints have no 'arch' key -> ScentCNNsmall.
+    arch_name = checkpoint.get('arch', 'ScentCNNsmall')
+    model_cls = ARCHITECTURES.get(arch_name, ScentCNNsmall)
     model = model_cls(
         num_features=checkpoint['num_features'],
         num_classes=checkpoint['num_classes']
@@ -254,7 +254,7 @@ def predict(model, scaler, label_encoder, new_data_df, device=None):
     scales data, and runs forward inference to return predicted label strings.
 
     Parameters:
-        model (NNetwork): Trained PyTorch model instance
+        model (ScentCNNsmall): Trained PyTorch model instance
         scaler (StandardScaler): Scaler instance used for feature normalization
         label_encoder (LabelEncoder): Encoder mapping numeric predictions back to class labels
         new_data_df (pandas.DataFrame): DataFrame containing raw sensor measurements
@@ -283,4 +283,4 @@ def predict(model, scaler, label_encoder, new_data_df, device=None):
         outputs = model(inputs)
         _, predicted = torch.max(outputs, 1)
 
-    return label_encoder.inverse_transform(predicted.cpu().numpy())
+    return label_encoder.inverse_transform(predicted.cpu().numpy())
