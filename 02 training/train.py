@@ -204,6 +204,7 @@ def save_model(model, scaler, label_encoder, path='model/scent_classifier.pth'):
         'model_state_dict': model.state_dict(),
         'scaler': scaler,
         'label_encoder': label_encoder,
+        'arch': model.__class__.__name__,
         'num_features': 40,
         'num_classes': len(label_encoder.classes_)
     }, path)

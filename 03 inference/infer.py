@@ -26,7 +26,7 @@ utils_path = os.path.join(current_dir, '../01 utils')
 sys.path.append(utils_path)
 
 try:
-    from model_arch import NNetwork, load_model
+    from model_arch import load_model
     from sensor_collector import SensorDataCollector
 except ImportError as e:
     print('Error: Failed to import utils.')
@@ -105,11 +105,14 @@ def predict_window(model, scaler, label_encoder, df_window):
     feature_cols = ['Temp', 'Hum', 'NO2_V', 'Eth_V', 'VOC_V', 'CO_V']
     features = df_window[feature_cols].copy()
 
-    # pad to 40 features, same logic as training
-    while features.shape[1] < 40:
+    # Match the number of features the scaler was fit on. Legacy models (NNetwork,
+    # ScentCNN) were trained on 40 padded features; train_v2 MLPs use the real
+    # feature count with no padding.
+    expected = getattr(scaler, 'n_features_in_', 40)
+    while features.shape[1] < expected:
         features[f'pad_{features.shape[1]}'] = 0.0
 
-    X = scaler.transform(features.iloc[:, :40])
+    X = scaler.transform(features.iloc[:, :expected])
     inputs = torch.FloatTensor(X).to(DEVICE)
 
     model.eval()
