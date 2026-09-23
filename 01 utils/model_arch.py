@@ -129,6 +129,90 @@ class ScentCNN(nn.Module):
 
 
 
+class ScentMLPSmall(nn.Module):
+    """
+    Small fully-connected classifier for tabular sensor features.
+
+    Sized to the actual number of input features (no zero-padding). Intended as
+    the lightweight architecture for edge deployment where model size matters.
+    """
+
+    def __init__(self, num_features=6, num_classes=5, dropout_rate=0.3):
+        """
+        Initialize the ScentMLPSmall model.
+
+        Parameters:
+            num_features (int): Number of real input features (default 6)
+            num_classes (int): Number of target output classes (default 5)
+            dropout_rate (float): Dropout probability during training (default 0.3)
+        """
+        super(ScentMLPSmall, self).__init__()
+        self.net = nn.Sequential(
+            nn.Linear(num_features, 32),
+            nn.ReLU(),
+            nn.Dropout(dropout_rate),
+            nn.Linear(32, 16),
+            nn.ReLU(),
+            nn.Dropout(dropout_rate),
+            nn.Linear(16, num_classes)
+        )
+
+    def forward(self, x):
+        """Perform forward pass, returning unnormalized class logits."""
+        return self.net(x)
+
+
+class ScentMLPRobust(nn.Module):
+    """
+    Wider, strongly-regularized fully-connected classifier for tabular features.
+
+    Uses BatchNorm + Dropout in each hidden block to provide regularized capacity
+    without the false locality assumption a 1D CNN would impose on unordered
+    sensor channels. See plan.md for the MLP-vs-CNN rationale.
+    """
+
+    def __init__(self, num_features=6, num_classes=5, dropout_rate=0.4):
+        """
+        Initialize the ScentMLPRobust model.
+
+        Parameters:
+            num_features (int): Number of real input features (default 6)
+            num_classes (int): Number of target output classes (default 5)
+            dropout_rate (float): Dropout probability during training (default 0.4)
+        """
+        super(ScentMLPRobust, self).__init__()
+
+        def block(in_dim, out_dim):
+            return nn.Sequential(
+                nn.Linear(in_dim, out_dim),
+                nn.BatchNorm1d(out_dim),
+                nn.ReLU(),
+                nn.Dropout(dropout_rate)
+            )
+
+        self.features = nn.Sequential(
+            block(num_features, 128),
+            block(128, 64),
+            block(64, 32)
+        )
+        self.classifier = nn.Linear(32, num_classes)
+
+    def forward(self, x):
+        """Perform forward pass, returning unnormalized class logits."""
+        x = self.features(x)
+        x = self.classifier(x)
+        return x
+
+
+# Registry mapping checkpoint architecture names to their classes.
+ARCHITECTURES = {
+    'NNetwork': NNetwork,
+    'ScentCNN': ScentCNN,
+    'ScentMLPSmall': ScentMLPSmall,
+    'ScentMLPRobust': ScentMLPRobust,
+}
+
+
 def load_model(path='model/scent_classifier.pth', device=None):
     """
     Load saved PyTorch model checkpoint along with feature scaler and label encoder.
@@ -144,7 +228,11 @@ def load_model(path='model/scent_classifier.pth', device=None):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     checkpoint = torch.load(path, map_location=device)
-    model = NNetwork(
+
+    # Backward compatible: older checkpoints have no 'arch' key -> NNetwork.
+    arch_name = checkpoint.get('arch', 'NNetwork')
+    model_cls = ARCHITECTURES.get(arch_name, NNetwork)
+    model = model_cls(
         num_features=checkpoint['num_features'],
         num_classes=checkpoint['num_classes']
     ).to(device)
@@ -154,7 +242,7 @@ def load_model(path='model/scent_classifier.pth', device=None):
     scaler = checkpoint['scaler']
     label_encoder = checkpoint['label_encoder']
 
-    print('Model loaded.')
+    print(f'Model loaded (arch={arch_name}).')
     return model, scaler, label_encoder
 
 
@@ -181,11 +269,13 @@ def predict(model, scaler, label_encoder, new_data_df, device=None):
     feature_cols = ['Temp', 'Hum', 'NO2_V', 'Eth_V', 'VOC_V', 'CO_V']
     features = new_data_df[feature_cols].copy()
 
-    # Pad to 40 features
-    while features.shape[1] < 40:
+    # Match the number of features the scaler was fit on. New models are trained
+    # on the real feature count (no padding); legacy models were padded to 40.
+    expected = getattr(scaler, 'n_features_in_', len(feature_cols))
+    while features.shape[1] < expected:
         features[f'pad_{features.shape[1]}'] = 0.0
 
-    X_new = scaler.transform(features.iloc[:, :40])
+    X_new = scaler.transform(features.iloc[:, :expected])
     inputs = torch.FloatTensor(X_new).to(device)
 
     model.eval()
