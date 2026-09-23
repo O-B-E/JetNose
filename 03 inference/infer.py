@@ -161,7 +161,11 @@ def main():
     model_path = input(
         "Enter model path or press Enter for default: "
     ).strip() or os.path.join(current_dir, "../02 training/model/scent_classifier.pth")
-    
+
+    # Model name derived from the checkpoint filename (e.g. 'CNNrobust' from
+    # '.../model/CNNrobust.pth'), used for the log filename and logged in-file.
+    model_name = os.path.splitext(os.path.basename(model_path))[0]
+
     print(f"Loading Model from path: {model_path}")
     
     model, arch_name, scaler, label_encoder = load_model(path=model_path, device=DEVICE)
@@ -184,7 +188,7 @@ def main():
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     collector = SensorDataCollector(
-        csv_file=os.path.join(current_dir, f'csv/{"accuracy_test" if args.accuracy_test else "infer_log"}_{arch_name}_{timestamp}.csv'),
+        csv_file=os.path.join(current_dir, f'csv/{"accuracy_test" if args.accuracy_test else "infer_log"}_{model_name}_{timestamp}.csv'),
         sample_freq_hz=4,
         samples_per_label=10,
         warmup_time=1,
@@ -259,6 +263,15 @@ def main():
         print("\nInference stopped by user.")
     finally:
         collector.close()
+
+        # Record which model produced this log, after all samples are written
+        # (collector.close() flushes them) and before any analysis output.
+        try:
+            with open(collector.csv_file, 'a', encoding='utf-8') as f:
+                f.write(f"\nModel: {model_name}\nArchitecture: {arch_name}\n")
+        except Exception as e:
+            print(f"Error writing model name to log: {e}")
+
         if args.accuracy_test:
             try:
                 from analysis import analyze_accuracy_log
