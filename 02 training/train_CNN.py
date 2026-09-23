@@ -25,8 +25,8 @@ utils_path = os.path.join(current_dir, '../01 utils')
 sys.path.append(utils_path)
 
 try:
-    from model_arch import NNetwork, ScentCNN
-    ARCH_MAP = {'small': NNetwork, 'robust': ScentCNN}
+    from model_arch import ScentCNNsmall, ScentCNNrobust
+    ARCH_MAP = {'small': ScentCNNsmall, 'robust': ScentCNNrobust}
 except ImportError as e:
     print(f"\nError: Failed to import Neural Network architecture.")
     print(f"Details: {e}")
@@ -99,7 +99,7 @@ def train_model(csv_file='csv/training_data.csv', num_epochs=300, lr=0.0005, val
 
     # Initialize model
     num_classes = len(label_encoder.classes_)
-    model = ARCH_MAP.get(arch, NNetwork)(num_features=40, num_classes=num_classes).to(device)
+    model = ARCH_MAP.get(arch, ScentCNNsmall)(num_features=40, num_classes=num_classes).to(device)
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
