@@ -188,7 +188,7 @@ def main():
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
     collector = SensorDataCollector(
-        csv_file=os.path.join(current_dir, f'csv/{"accuracy_test" if args.accuracy_test else "infer_log"}_{model_name}_{timestamp}.csv'),
+        csv_file=os.path.join(current_dir, f'logs/{"accuracy_test" if args.accuracy_test else "infer_log"}_{model_name}_{timestamp}.csv'),
         sample_freq_hz=4,
         samples_per_label=10,
         warmup_time=1,
