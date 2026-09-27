@@ -276,11 +276,17 @@ def main():
             try:
                 from analysis import analyze_accuracy_log
                 result = analyze_accuracy_log(collector.csv_file)
-                
+
                 if result:
-                    with open(collector.csv_file, 'a', encoding='utf-8') as f:
+                    reports_dir = os.path.join(current_dir, 'analysis_reports')
+                    os.makedirs(reports_dir, exist_ok=True)
+                    report_path = os.path.join(
+                        reports_dir, f"report_{model_name}_{timestamp}.txt"
+                    )
+                    with open(report_path, 'w', encoding='utf-8') as f:
+                        f.write(f"Model: {model_name}\nArchitecture: {arch_name}\n")
                         f.write(result)
-                    print(f"\Analysis results saved to: {collector.csv_file}")
+                    print(f"\nAnalysis report saved to: {report_path}")
             except ImportError:
                 print("Error: Could not import analyze_accuracy_log from analysis module.")
             except Exception as e:
