@@ -16,9 +16,12 @@ sys.path.append(utils_path)
 from sensor_collector import SensorDataCollector
 
 def main():
+    csv_filename=input("Enter CSV file name (default: training_data): ") or 'training_data',
+    csv_file=os.path.join(current_dir, 'csv', f'{csv_filename}.csv'),
+
     # Initialize collector (customize paths/settings here)
     collector = SensorDataCollector(
-        csv_file='csv/training_data.csv',
+        csv_file=csv_file,
         sample_freq_hz=4,
         samples_per_label=100,
         warmup_time=1
