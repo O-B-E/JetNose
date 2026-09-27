@@ -1,7 +1,7 @@
 """
 Neural Network Architecture and Inference Helper Utilities
 
-Defines the ScentCNNsmall PyTorch neural network model architecture alongside
+Defines the neural network model architectures alongside
 helper functions for loading model checkpoints and performing inference
 on new sensor data.
 """
