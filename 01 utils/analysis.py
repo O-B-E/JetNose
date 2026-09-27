@@ -161,6 +161,7 @@ def analyze_accuracy_log(log_file_path):
         f"\n\n{'=' * 65}",
         "ACCURACY TEST ANALYSIS",
         f"{'=' * 65}\n",
+        f"\nOverall Accuracy: {overall_accuracy:.2f}% ({total_correct}/{total_predictions})\n\n",
         f"{'Segment':<9} | {'Ground Truth':<15} | {'Initial':<11} | {'Recovery Delay':<15}",
         "-" * 65,
     ]
@@ -192,7 +193,8 @@ def analyze_accuracy_log(log_file_path):
 
 if __name__ == "__main__":
     if len(sys.argv) > 1:
-        log_path = sys.argv[1]
+        log_file = sys.argv[1]
+        log_path = os.path.join("../03 inference/logs", log_file)
         analyze_accuracy_log(log_path)
     else:
-        print("Usage: python analysis.py <path_to_log.csv>")
+        print("Usage: python analysis.py <accuracy_test_log.csv>")
