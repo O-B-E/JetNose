@@ -69,11 +69,12 @@ def prepare_data(csv_file, val_split=0.2):
     return X_train, X_val, y_train, y_val, scaler, label_encoder
 
 
-def train_model(csv_file='csv/training_data.csv', num_epochs=300, lr=0.0005, val_split=0.2, batch_size=32, history_dir='logs', arch='small', patience=30):
+def train_model(model_name, csv_file='csv/training_data.csv', num_epochs=300, lr=0.0005, val_split=0.2, batch_size=32, history_dir='logs', arch='small', patience=30):
     """
     Execute full training and validation loop for the scent classification model.
 
     Parameters:
+        model_name (str): Model name used for saving the checkpoint and history CSVs
         csv_file (str): Path to CSV training dataset file (default 'csv/training_data.csv')
         num_epochs (int): Total number of training epochs (default 300)
         lr (float): Learning rate for Adam optimizer (default 0.0005)
@@ -181,7 +182,7 @@ def train_model(csv_file='csv/training_data.csv', num_epochs=300, lr=0.0005, val
     hist_dir = os.path.join(current_dir, history_dir)
     os.makedirs(hist_dir, exist_ok=True)
     stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    hist_path = os.path.join(hist_dir, f'train_history_{stamp}.csv')
+    hist_path = os.path.join(hist_dir, f'training_history_{model_name}_{stamp}.csv')
     pd.DataFrame(history).to_csv(hist_path, index=False)
     print(f'Training history saved to {hist_path}')
 
@@ -215,9 +216,10 @@ def save_model(model, scaler, label_encoder, path='model/scent_classifier.pth'):
 if __name__ == "__main__":
     csv_path = input("Enter CSV file path (default: csv/training_data.csv): ") or 'csv/training_data.csv'
     arch = input("Enter model architecture (default: small): ") or 'small'
-    model_path = input("Enter model **save** path (default: model/scent_classifier.pth): ") or 'model/scent_classifier.pth'
+    model_name = input("Enter model name (default: CNN_model): ") or 'CNN_model'
+    model_path = os.path.join('model', f'{model_name}.pth')
 
-    model, scaler, label_encoder = train_model(csv_file=csv_path, arch=arch)
+    model, scaler, label_encoder = train_model(model_name=model_name, csv_file=csv_path, arch=arch)
     save_model(model, scaler, label_encoder, path=model_path)
 
 

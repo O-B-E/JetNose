@@ -134,7 +134,7 @@ def _evaluate(model, loader, criterion, device):
     return avg_loss, acc
 
 
-def train_model(csv_file='csv/training_data.csv', arch='robust', num_epochs=300,
+def train_model( model_name, csv_file='csv/training_data.csv', arch='robust', num_epochs=300,
                 lr=0.0005, weight_decay=1e-4, val_split=0.2, test_split=0.2,
                 batch_size=32, patience=30, gap_seconds=2.0, history_dir='logs'):
     """
@@ -142,6 +142,7 @@ def train_model(csv_file='csv/training_data.csv', arch='robust', num_epochs=300,
     per-epoch history logging, and a held-out test evaluation.
 
     Parameters:
+        model_name (str): Model name used for saving the checkpoint and history CSVs.
         csv_file (str): Path to the CSV training dataset.
         arch (str): 'small' or 'robust' architecture selector.
         num_epochs (int): Maximum number of training epochs.
@@ -257,7 +258,7 @@ def train_model(csv_file='csv/training_data.csv', arch='robust', num_epochs=300,
     hist_dir = os.path.join(current_dir, history_dir)
     os.makedirs(hist_dir, exist_ok=True)
     stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    hist_path = os.path.join(hist_dir, f'train_history_{arch}_{stamp}.csv')
+    hist_path = os.path.join(hist_dir, f'training_history_{model_name}_{stamp}.csv')
     pd.DataFrame(history).to_csv(hist_path, index=False)
     print(f'Training history saved to {hist_path}')
 
@@ -293,9 +294,9 @@ def save_model(model, scaler, label_encoder, feature_cols, arch_name,
 
 if __name__ == "__main__":
     csv_path = input("Enter CSV file path (default: csv/training_data.csv): ") or 'csv/training_data.csv'
-    arch_choice = (input("Choose architecture [small/robust] (default: robust): ") or 'robust').strip().lower()
-    model_path = input("Enter model **save** path (default: model/scent_classifier.pth): ") or 'model/scent_classifier.pth'
+    arch = (input("Choose architecture [small/robust] (default: robust): ") or 'robust').strip().lower()
+    model_name = input("Enter model name (default: MLP_model): ") or 'MLP_model'
+    model_path = os.path.join('model', f'{model_name}.pth')
 
-    model, scaler, label_encoder, feature_cols, arch_name = train_model(
-        csv_file=csv_path, arch=arch_choice)
+    model, scaler, label_encoder, feature_cols, arch_name = train_model( model_name=model_name, csv_file=csv_path, arch=arch)
     save_model(model, scaler, label_encoder, feature_cols, arch_name, path=model_path)
