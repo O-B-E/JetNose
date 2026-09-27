@@ -12,43 +12,54 @@ import torch.nn as nn
 
 class ScentCNNsmall(nn.Module):
     """
-    Neural network model architecture for scent classification.
+    Small 1D Convolutional Neural Network for scent classification.
 
-    Consists of input, hidden, and output fully-connected layers with
-    ReLU activations and dropout for regularization.
+    A lightweight convolutional feature extractor (two Conv1d stages with batch
+    normalization) followed by global average pooling and a linear classifier
+    head. Length-agnostic via AdaptiveAvgPool1d, so it accepts any input length;
+    inputs shaped (batch, num_features) are treated as a single-channel sequence.
     """
 
-    def __init__(self, num_features=40, num_classes=5, dropout_rate=0.25):
+    def __init__(self, num_features=6, num_classes=5, in_channels=1, dropout_rate=0.25):
         """
         Initialize the ScentCNNsmall model.
 
         Parameters:
-            num_features (int): Number of input features (default 40)
+            num_features (int): Input sequence length (default 6). Informational
+                only; the network is length-agnostic thanks to global pooling.
             num_classes (int): Number of target output classes (default 5)
+            in_channels (int): Number of input sensor channels (default 1)
             dropout_rate (float): Probability of dropping out nodes during training (default 0.25)
         """
         super(ScentCNNsmall, self).__init__()
-        self.input_layer = nn.Linear(num_features, 40)
-        self.hidden_layer = nn.Linear(40, 20)
-        self.output_layer = nn.Linear(20, num_classes)
-        self.dropout = nn.Dropout(dropout_rate)
+        self.conv1 = nn.Conv1d(in_channels, 16, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm1d(16)
+        self.conv2 = nn.Conv1d(16, 32, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm1d(32)
         self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(dropout_rate)
+        self.global_pool = nn.AdaptiveAvgPool1d(1)
+        self.classifier = nn.Linear(32, num_classes)
 
     def forward(self, x):
         """
-        Perform forward pass through the network.
+        Perform forward pass through the 1D CNN.
 
         Parameters:
-            x (torch.Tensor): Input tensor containing feature data
+            x (torch.Tensor): Input tensor of shape (batch_size, num_features) or
+                (batch_size, channels, sequence_length)
 
         Returns:
             torch.Tensor: Unnormalized class logits output by the network
         """
-        x = self.relu(self.input_layer(x))
+        if x.dim() == 2:
+            x = x.unsqueeze(1)                       # (N, 1, L)
+
+        x = self.relu(self.bn1(self.conv1(x)))       # (N, 16, L)
+        x = self.relu(self.bn2(self.conv2(x)))       # (N, 32, L)
         x = self.dropout(x)
-        x = self.relu(self.hidden_layer(x))
-        x = self.dropout(x)
-        x = self.output_layer(x)
+        x = self.global_pool(x).squeeze(-1)          # (N, 32)
+        x = self.classifier(x)                       # (N, num_classes)
         return x
 
 
@@ -61,7 +72,7 @@ class ScentCNNrobust(nn.Module):
     to extract local feature dynamics from multi-sensor telemetry.
     """
 
-    def __init__(self, num_features=40, num_classes=5, in_channels=1, dropout_rate=0.25):
+    def __init__(self, num_features=6, num_classes=5, in_channels=1, dropout_rate=0.25):
         """
         Initialize the ScentCNNrobust model.
 
