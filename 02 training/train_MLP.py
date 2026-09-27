@@ -213,7 +213,7 @@ def train_model( model_name, csv_file='csv/training_data.csv', arch='robust', nu
         })
 
         # Early stopping / best-checkpoint tracking.
-        if val_loss < best_val_loss - 1e-5:
+        if val_loss < best_val_loss - 1e-4:  # Significant improvement
             best_val_loss = val_loss
             best_state = copy.deepcopy(model.state_dict())
             best_epoch = epoch + 1
