@@ -64,24 +64,22 @@ def _assign_groups(df, gap_seconds=2.0):
     return boundaries.cumsum().to_numpy()
 
 
-def prepare_data(csv_file, val_split=0.2, test_split=0.2, gap_seconds=2.0, random_state=42):
+def prepare_data(csv_file, val_split=0.2, gap_seconds=2.0, random_state=42):
     """
-    Load the dataset and produce leakage-safe train/val/test splits.
+    Load the dataset and produce a leakage-safe train/val split (80/20 by default).
 
     Features are NOT zero-padded. The scaler is fit on the training split only.
     Splitting is grouped (by recording run) so adjacent near-duplicate readings
-    never straddle two splits.
+    never straddle the two splits.
 
     Parameters:
         csv_file (str): Path to the CSV dataset.
-        val_split (float): Fraction of the (train+val) pool used for validation.
-        test_split (float): Fraction of the full dataset held out for testing.
+        val_split (float): Fraction of the dataset used for validation.
         gap_seconds (float): Time gap that separates recording runs (for grouping).
         random_state (int): Seed for the group splitter.
 
     Returns:
-        tuple: (X_train, X_val, X_test, y_train, y_val, y_test,
-                scaler, label_encoder, feature_cols)
+        tuple: (X_train, X_val, y_train, y_val, scaler, label_encoder, feature_cols)
     """
     df = pd.read_csv(csv_file)
 
@@ -92,29 +90,19 @@ def prepare_data(csv_file, val_split=0.2, test_split=0.2, gap_seconds=2.0, rando
 
     X_all = features.to_numpy(dtype=np.float32)
 
-    # Split 1: hold out the test set by group.
-    gss_test = GroupShuffleSplit(n_splits=1, test_size=test_split, random_state=random_state)
-    trainval_idx, test_idx = next(gss_test.split(X_all, y, groups))
+    # Grouped train/val split so adjacent near-duplicate readings never straddle splits.
+    gss = GroupShuffleSplit(n_splits=1, test_size=val_split, random_state=random_state)
+    train_idx, val_idx = next(gss.split(X_all, y, groups))
 
-    X_trainval, y_trainval, groups_trainval = X_all[trainval_idx], y[trainval_idx], groups[trainval_idx]
-    X_test, y_test = X_all[test_idx], y[test_idx]
+    X_train, y_train = X_all[train_idx], y[train_idx]
+    X_val, y_val = X_all[val_idx], y[val_idx]
 
-    # Split 2: carve validation out of the remaining pool, again by group.
-    val_frac = val_split / (1.0 - test_split)
-    gss_val = GroupShuffleSplit(n_splits=1, test_size=val_frac, random_state=random_state)
-    train_idx, val_idx = next(gss_val.split(X_trainval, y_trainval, groups_trainval))
-
-    X_train, y_train = X_trainval[train_idx], y_trainval[train_idx]
-    X_val, y_val = X_trainval[val_idx], y_trainval[val_idx]
-
-    # Fit scaler on the training split only, then transform all splits.
+    # Fit scaler on the training split only, then transform both splits.
     scaler = StandardScaler()
     X_train = scaler.fit_transform(X_train)
     X_val = scaler.transform(X_val)
-    X_test = scaler.transform(X_test)
 
-    return (X_train, X_val, X_test, y_train, y_val, y_test,
-            scaler, label_encoder, FEATURE_COLS)
+    return X_train, X_val, y_train, y_val, scaler, label_encoder, FEATURE_COLS
 
 
 def _evaluate(model, loader, criterion, device):
@@ -135,11 +123,11 @@ def _evaluate(model, loader, criterion, device):
 
 
 def train_model( model_name, csv_file='csv/training_data.csv', arch='robust', num_epochs=300,
-                lr=0.0005, weight_decay=1e-4, val_split=0.2, test_split=0.2,
-                batch_size=32, patience=30, gap_seconds=2.0, history_dir='logs'):
+                lr=0.0005, weight_decay=1e-4, val_split=0.2,
+                batch_size=32, patience=10, gap_seconds=2.0, history_dir='logs'):
     """
     Train a scent classifier with early stopping, weight decay, LR scheduling,
-    per-epoch history logging, and a held-out test evaluation.
+    and per-epoch history logging, using an 80/20 train/val split.
 
     Parameters:
         model_name (str): Model name used for saving the checkpoint and history CSVs.
@@ -149,7 +137,6 @@ def train_model( model_name, csv_file='csv/training_data.csv', arch='robust', nu
         lr (float): Initial Adam learning rate.
         weight_decay (float): L2 regularization strength.
         val_split (float): Validation fraction of the dataset.
-        test_split (float): Test fraction of the dataset.
         batch_size (int): Mini-batch size.
         patience (int): Epochs without val-loss improvement before stopping.
         gap_seconds (float): Time gap marking a new recording run (grouping).
@@ -163,9 +150,9 @@ def train_model( model_name, csv_file='csv/training_data.csv', arch='robust', nu
     if arch not in ARCH_MAP:
         raise ValueError(f"Unknown arch '{arch}'. Choose from {list(ARCH_MAP)}.")
 
-    (X_train, X_val, X_test, y_train, y_val, y_test,
+    (X_train, X_val, y_train, y_val,
      scaler, label_encoder, feature_cols) = prepare_data(
-        csv_file, val_split=val_split, test_split=test_split, gap_seconds=gap_seconds)
+        csv_file, val_split=val_split, gap_seconds=gap_seconds)
 
     # drop_last avoids a size-1 final batch, which BatchNorm1d cannot handle in
     # training mode (only dropped when there is more than one full batch).
@@ -175,9 +162,6 @@ def train_model( model_name, csv_file='csv/training_data.csv', arch='robust', nu
         batch_size=batch_size, shuffle=True, drop_last=drop_last)
     val_loader = DataLoader(
         TensorDataset(torch.FloatTensor(X_val), torch.LongTensor(y_val)),
-        batch_size=batch_size, shuffle=False)
-    test_loader = DataLoader(
-        TensorDataset(torch.FloatTensor(X_test), torch.LongTensor(y_test)),
         batch_size=batch_size, shuffle=False)
 
     num_classes = len(label_encoder.classes_)
@@ -202,7 +186,7 @@ def train_model( model_name, csv_file='csv/training_data.csv', arch='robust', nu
     history = []
 
     print(f'Started Training (arch={arch_name}, features={num_features}, classes={num_classes})')
-    print(f'Split sizes -> train: {len(y_train)}, val: {len(y_val)}, test: {len(y_test)}')
+    print(f'Split sizes -> train: {len(y_train)}, val: {len(y_val)}')
 
     for epoch in range(num_epochs):
         model.train()
@@ -247,12 +231,9 @@ def train_model( model_name, csv_file='csv/training_data.csv', arch='robust', nu
                   f'(no val-loss improvement for {patience} epochs).')
             break
 
-    # Restore the best weights before final evaluation / saving.
+    # Restore the best weights before saving.
     model.load_state_dict(best_state)
     print(f'Restored best model from epoch {best_epoch} (val loss {best_val_loss:.4f}).')
-
-    test_loss, test_acc = _evaluate(model, test_loader, criterion, device)
-    print(f'Held-out Test -> Loss: {test_loss:.4f} | Acc: {test_acc:.2f}%')
 
     # Persist per-epoch history.
     hist_dir = os.path.join(current_dir, history_dir)
