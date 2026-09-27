@@ -49,13 +49,9 @@ def prepare_data(csv_file, val_split=0.2):
     feature_cols = ['Temp', 'Hum', 'NO2_V', 'Eth_V', 'VOC_V', 'CO_V']
     features = df[feature_cols].copy()
 
-    # Pad to 40 features if needed
-    while features.shape[1] < 40:
-        features[f'pad_{features.shape[1]}'] = 0.0
-
-    # Scale features
+    # Scale the real sensor features (no zero-padding).
     scaler = StandardScaler()
-    X = scaler.fit_transform(features.iloc[:, :40])
+    X = scaler.fit_transform(features)
 
     # Encode labels
     label_encoder = LabelEncoder()
@@ -69,7 +65,7 @@ def prepare_data(csv_file, val_split=0.2):
     return X_train, X_val, y_train, y_val, scaler, label_encoder
 
 
-def train_model(model_name, csv_file='csv/training_data.csv', num_epochs=300, lr=0.0005, val_split=0.2, batch_size=32, history_dir='logs', arch='small', patience=30):
+def train_model(model_name, csv_file='csv/training_data.csv', num_epochs=300, lr=0.0005, val_split=0.2, batch_size=32, history_dir='logs', arch='small', patience=10):
     """
     Execute full training and validation loop for the scent classification model.
 
@@ -82,7 +78,7 @@ def train_model(model_name, csv_file='csv/training_data.csv', num_epochs=300, lr
         batch_size (int): Mini-batch size for DataLoaders (default 32)
         history_dir (str): Directory (relative to this script) for per-epoch history CSVs (default 'logs')
         arch (str): Model architecture to use (default 'small')
-        patience (int): Epochs without val-loss improvement before early stopping (default 30)
+        patience (int): Epochs without val-loss improvement before early stopping (default 10)
 
     Returns:
         tuple: (model, scaler, label_encoder) trained PyTorch model and preprocessing artifacts
@@ -95,12 +91,16 @@ def train_model(model_name, csv_file='csv/training_data.csv', num_epochs=300, lr
     # Create dataloaders
     train_dataset = TensorDataset(torch.FloatTensor(X_train), torch.LongTensor(y_train))
     val_dataset = TensorDataset(torch.FloatTensor(X_val), torch.LongTensor(y_val))
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    # drop_last avoids a size-1 final batch, which BatchNorm1d cannot handle in
+    # training mode (only dropped when there is more than one full batch).
+    drop_last = len(y_train) > batch_size
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, drop_last=drop_last)
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
 
     # Initialize model
     num_classes = len(label_encoder.classes_)
-    model = ARCH_MAP.get(arch, ScentCNNsmall)(num_features=40, num_classes=num_classes).to(device)
+    num_features = X_train.shape[1]
+    model = ARCH_MAP.get(arch, ScentCNNsmall)(num_features=num_features, num_classes=num_classes).to(device)
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
@@ -112,7 +112,7 @@ def train_model(model_name, csv_file='csv/training_data.csv', num_epochs=300, lr
     epochs_no_improve = 0
 
     # Training loop
-    print(f'Started Training (arch={arch}, features=40, classes={num_classes})')
+    print(f'Started Training (arch={arch}, features={num_features}, classes={num_classes})')
     print(f'Split sizes -> train: {len(y_train)}, val: {len(y_val)}')
 
     for epoch in range(num_epochs):
@@ -206,7 +206,7 @@ def save_model(model, scaler, label_encoder, path='model/scent_classifier.pth'):
         'scaler': scaler,
         'label_encoder': label_encoder,
         'arch': model.__class__.__name__,
-        'num_features': 40,
+        'num_features': int(scaler.n_features_in_),
         'num_classes': len(label_encoder.classes_)
     }, path)
     print(f'Model saved to {path}')
@@ -214,10 +214,14 @@ def save_model(model, scaler, label_encoder, path='model/scent_classifier.pth'):
 
 # Usage example with interactive prompts:
 if __name__ == "__main__":
-    csv_path = input("Enter CSV file path (default: csv/training_data.csv): ") or 'csv/training_data.csv'
+    csv_name = input("Enter CSV file name (default: training_data): ") or 'training_data'
+    csv_path = os.path.join('csv', f'{csv_name}.csv')
+    print(f'Using CSV file: {csv_path}')
+
     arch = input("Enter model architecture (default: small): ") or 'small'
     model_name = input("Enter model name (default: CNN_model): ") or 'CNN_model'
     model_path = os.path.join('model', f'{model_name}.pth')
+    print(f'Model architecture configuration: {arch}, will be saved to: {model_path}')
 
     model, scaler, label_encoder = train_model(model_name=model_name, csv_file=csv_path, arch=arch)
     save_model(model, scaler, label_encoder, path=model_path)
