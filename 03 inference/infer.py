@@ -35,6 +35,9 @@ except ImportError as e:
 
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+# Constants for accuracy testing mode
+ROUNDS_PER_LABEL = 5
+SAMPLES_PER_ROUND = 15
 
 def parse_args():
     """
@@ -174,7 +177,7 @@ def main():
     if args.accuracy_test:
         print("\n" + "=" * 55)
         print("ACCURACY TESTING MODE ACTIVE")
-        print("For each label, 5 rounds (50 samples) are collected and classified,")
+        print(f"For each label, {ROUNDS_PER_LABEL} rounds of {SAMPLES_PER_ROUND} samples, {ROUNDS_PER_LABEL * SAMPLES_PER_ROUND} samples are collected and classified,")
         print("then you are prompted for the next label. Enter 'q' to stop & analyze.")
         print("=" * 55)
         while not current_ground_truth:
@@ -199,8 +202,6 @@ def main():
         print("Entering real-time inference loop. CTRL+C to exit.\n")
 
         if args.accuracy_test:
-            ROUNDS_PER_LABEL = 5
-            SAMPLES_PER_ROUND = 15
             while True:
                 # Run a fixed batch of classification rounds for the current label.
                 print(f"\nCollecting {ROUNDS_PER_LABEL} rounds "
