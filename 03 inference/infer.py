@@ -201,7 +201,7 @@ def main():
 
         if args.accuracy_test:
             ROUNDS_PER_LABEL = 5
-            SAMPLES_PER_ROUND = 10
+            SAMPLES_PER_ROUND = 15
             while True:
                 # Run a fixed batch of classification rounds for the current label.
                 print(f"\nCollecting {ROUNDS_PER_LABEL} rounds "
