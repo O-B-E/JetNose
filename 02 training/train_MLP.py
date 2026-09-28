@@ -233,7 +233,7 @@ def train_model( model_name, csv_file='csv/training_data.csv', arch='robust', nu
 
     # Restore the best weights before saving.
     model.load_state_dict(best_state)
-    summary = f'Restored best model from epoch {best_epoch} (val loss {best_val_loss:.4f}).'
+    summary = f'Training completed. Restored best model from epoch {best_epoch} (val loss {best_val_loss:.4f}).'
     print(summary)
 
     # Persist per-epoch history.
