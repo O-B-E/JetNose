@@ -52,6 +52,13 @@ def parse_args():
         action="store_true",
         help="Enable accuracy testing mode with ground truth tracking and post-run analysis"
     )
+    parser.add_argument(
+        "-f", "--file",
+        metavar="FILE_NAME",
+        default=None,
+        help="Run the accuracy test on pre-recorded samples in csv/<FILE_NAME> "
+             "(no live sensors needed) instead of collecting live data."
+    )
     return parser.parse_args()
 
 
@@ -154,6 +161,148 @@ def pretty_print_confidences(class_conf_dict, best_class):
     print()
 
 
+def append_model_footer(log_path, model_name, arch_name):
+    """
+    Append the model name and architecture footer to a completed log file.
+
+    Parameters:
+        log_path (str): Path to the log CSV to append to
+        model_name (str): Model name used for this run
+        arch_name (str): Architecture name of the model
+    """
+    try:
+        with open(log_path, 'a', encoding='utf-8') as f:
+            f.write(f"\nModel: {model_name}\nArchitecture: {arch_name}\n")
+    except Exception as e:
+        print(f"Error writing model name to log: {e}")
+
+
+def write_analysis_report(log_path, model_name, arch_name, timestamp):
+    """
+    Analyze an accuracy log and save a human-readable report alongside it.
+
+    Parameters:
+        log_path (str): Path to the accuracy log CSV to analyze
+        model_name (str): Model name used for naming the report file
+        arch_name (str): Architecture name recorded in the report header
+        timestamp (str): Timestamp string used for naming the report file
+    """
+    try:
+        from analysis import analyze_accuracy_log
+        result = analyze_accuracy_log(log_path)
+        if result:
+            reports_dir = os.path.join(current_dir, 'analysis_reports')
+            os.makedirs(reports_dir, exist_ok=True)
+            report_path = os.path.join(reports_dir, f"report_{model_name}_{timestamp}.txt")
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write(f"Model: {model_name}\nArchitecture: {arch_name}\n")
+                f.write(result)
+            print(f"\nAnalysis report saved to: {report_path}")
+    except ImportError:
+        print("Error: Could not import analyze_accuracy_log from analysis module.")
+    except Exception as e:
+        print(f"Error during post-run analysis: {e}")
+
+
+def run_file_accuracy_test(model, arch_name, scaler, label_encoder, model_name, data_path):
+    """
+    Run the accuracy test on pre-recorded samples read from a CSV file.
+
+    Rows are grouped into consecutive same-label segments (the file's 'Label' column is
+    the ground truth), each segment is chunked into windows of SAMPLES_PER_ROUND samples,
+    every window is classified, and the per-window results are written to a standard
+    accuracy log which is then analyzed. No sensor hardware is required.
+
+    Parameters:
+        model (nn.Module): Trained PyTorch model instance
+        arch_name (str): Architecture name (recorded in the log footer)
+        scaler (StandardScaler): Feature scaler used during training
+        label_encoder (LabelEncoder): Label encoder mapping indices to class names
+        model_name (str): Model name used for naming the log/report files
+        data_path (str): Path to the CSV file holding pre-recorded samples
+    """
+    df = pd.read_csv(data_path)
+    if df.empty:
+        print(f"Error: Sample file is empty: {data_path}")
+        return
+    if 'Label' not in df.columns:
+        print(f"Error: Sample file '{data_path}' has no 'Label' column. Found: {list(df.columns)}")
+        return
+
+    df['Label'] = df['Label'].astype(str).str.strip()
+
+    # Group into consecutive same-label segments so recovery-delay analysis stays meaningful.
+    segment_id = (df['Label'] != df['Label'].shift()).cumsum()
+
+    log_headers = ['Timestamp', 'Temp', 'Hum', 'NO2_V', 'Eth_V', 'VOC_V', 'CO_V',
+                   'Label', 'Prediction', 'Confidence', 'ClassProbabilities']
+    log_rows = []
+    total = correct = 0
+
+    print(f"\nRunning file-based accuracy test on: {os.path.normpath(data_path)}")
+    print(f"Windowing {len(df)} samples into rounds of {SAMPLES_PER_ROUND}...\n")
+
+    for _, seg_df in df.groupby(segment_id, sort=False):
+        label = str(seg_df['Label'].iloc[0])
+        for start in range(0, len(seg_df), SAMPLES_PER_ROUND):
+            window = seg_df.iloc[start:start + SAMPLES_PER_ROUND]
+            if window.empty:
+                continue
+
+            best_class, best_conf, class_conf_dict = predict_window(
+                model, scaler, label_encoder, window
+            )
+
+            # Preserve the window's real first timestamp so recovery delays reflect
+            # the original recording timing; fall back to now() if absent/unparseable.
+            ts = None
+            if 'Timestamp' in window.columns:
+                ts = str(window['Timestamp'].iloc[0])
+            if not ts or ts == 'nan':
+                ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+
+            log_rows.append({
+                'Timestamp': ts,
+                'Temp': round(float(window['Temp'].mean()), 2),
+                'Hum': round(float(window['Hum'].mean()), 2),
+                'NO2_V': round(float(window['NO2_V'].mean()), 2),
+                'Eth_V': round(float(window['Eth_V'].mean()), 2),
+                'VOC_V': round(float(window['VOC_V'].mean()), 2),
+                'CO_V': round(float(window['CO_V'].mean()), 2),
+                'Label': label,
+                'Prediction': best_class,
+                'Confidence': round(float(best_conf), 2),
+                'ClassProbabilities': "{" + ", ".join(
+                    f"{k}:{v:.2f}%" for k, v in class_conf_dict.items()) + "}",
+            })
+
+            total += 1
+            is_match = best_class.lower() == label.lower()
+            correct += int(is_match)
+            print(f"[{total:4d}] Ground Truth: '{label}' | "
+                  f"Prediction: '{best_class}' ({best_conf:.1f}%) -> "
+                  f"{'MATCH' if is_match else 'MISMATCH'}")
+
+    if not log_rows:
+        print("No windows were produced from the sample file.")
+        return
+
+    print(f"\nClassified {total} windows | running accuracy: "
+          f"{100.0 * correct / total:.2f}% ({correct}/{total})")
+
+    # Persist the per-window results as a standard accuracy log.
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    logs_dir = os.path.join(current_dir, 'logs')
+    os.makedirs(logs_dir, exist_ok=True)
+    log_path = os.path.join(logs_dir, f'accuracy_test_{model_name}_{timestamp}.csv')
+    pd.DataFrame(log_rows, columns=log_headers).to_csv(log_path, index=False)
+    append_model_footer(log_path, model_name, arch_name)
+    print(f"Accuracy log saved to: {log_path}")
+
+    # Reuse the shared analysis to produce the report.
+    write_analysis_report(log_path, model_name, arch_name, timestamp)
+
+
 def main():
     """
     Main execution loop for real-time sensor sampling, model loading, and live inference logging.
@@ -167,10 +316,21 @@ def main():
         if os.path.exists(model_path):
             break
         print(f'Model file not found: {model_path}. Please try again.')
-    
+
     print(f"Loading Model from path: {os.path.normpath(model_path)}")
-    
+
     model, arch_name, scaler, label_encoder = load_model(path=model_path, device=DEVICE)
+
+    # File-based accuracy test: classify pre-recorded samples, no live sensors.
+    if args.file:
+        data_path = os.path.join(current_dir, 'csv', args.file)
+        if not os.path.exists(data_path):
+            print(f"Error: Sample file not found: {os.path.normpath(data_path)}")
+            return
+        run_file_accuracy_test(
+            model, arch_name, scaler, label_encoder, model_name, data_path
+        )
+        return
 
     # Initial Ground Truth Prompt if accuracy-test mode
     current_ground_truth = None
@@ -266,31 +426,10 @@ def main():
 
         # Record which model produced this log, after all samples are written
         # (collector.close() flushes them) and before any analysis output.
-        try:
-            with open(collector.csv_file, 'a', encoding='utf-8') as f:
-                f.write(f"\nModel: {model_name}\nArchitecture: {arch_name}\n")
-        except Exception as e:
-            print(f"Error writing model name to log: {e}")
+        append_model_footer(collector.csv_file, model_name, arch_name)
 
         if args.accuracy_test:
-            try:
-                from analysis import analyze_accuracy_log
-                result = analyze_accuracy_log(collector.csv_file)
-
-                if result:
-                    reports_dir = os.path.join(current_dir, 'analysis_reports')
-                    os.makedirs(reports_dir, exist_ok=True)
-                    report_path = os.path.join(
-                        reports_dir, f"report_{model_name}_{timestamp}.txt"
-                    )
-                    with open(report_path, 'w', encoding='utf-8') as f:
-                        f.write(f"Model: {model_name}\nArchitecture: {arch_name}\n")
-                        f.write(result)
-                    print(f"\nAnalysis report saved to: {report_path}")
-            except ImportError:
-                print("Error: Could not import analyze_accuracy_log from analysis module.")
-            except Exception as e:
-                print(f"Error during post-run analysis: {e}")
+            write_analysis_report(collector.csv_file, model_name, arch_name, timestamp)
 
 
 if __name__ == "__main__":
