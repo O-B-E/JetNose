@@ -147,7 +147,7 @@ def pretty_print_confidences(class_conf_dict, best_class):
         class_conf_dict (dict): Dictionary mapping class names to confidence percentages
         best_class (str): Name of top predicted class to highlight with an arrow
     """
-    print("\nWindow prediction (10 samples aggregated):")
+    print(f"\nWindow prediction ({SAMPLES_PER_ROUND} samples aggregated):")
     for cls, conf in class_conf_dict.items():
         mark = "<--" if cls == best_class else "   "
         print(f"{cls:15s}: {conf:6.2f}% {mark}")
@@ -247,7 +247,7 @@ def main():
                 print(f"Ground truth updated to: '{current_ground_truth}'.")
         else:
             while True:
-                df_window = collect_window_as_df(collector, label='', num_samples=10)
+                df_window = collect_window_as_df(collector, label='', num_samples=SAMPLES_PER_ROUND)
                 best_class, best_conf, class_conf_dict = predict_window(
                     model, scaler, label_encoder, df_window
                 )
