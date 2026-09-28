@@ -158,14 +158,13 @@ def main():
     args = parse_args()
 
     # Load model + preprocessing
-    model_path = input(
-        "Enter model path or press Enter for default: "
-    ).strip() or os.path.join(current_dir, "../02 training/model/scent_classifier.pth")
-
-    # Model name derived from the checkpoint filename (e.g. 'CNNrobust' from
-    # '.../model/CNNrobust.pth'), used for the log filename and logged in-file.
-    model_name = os.path.splitext(os.path.basename(model_path))[0]
-
+    while True:
+        model_name = input("Enter model name (default: ScentCNNsmall): ") or 'ScentCNNsmall'
+        model_path = os.path.join(current_dir, '../02 training/model', f'{model_name}.pth')
+        if os.path.exists(model_path):
+            break
+        print(f'Model file not found: {model_path}. Please try again.')
+    
     print(f"Loading Model from path: {model_path}")
     
     model, arch_name, scaler, label_encoder = load_model(path=model_path, device=DEVICE)
