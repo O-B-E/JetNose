@@ -214,11 +214,16 @@ def save_model(model, scaler, label_encoder, path='model/scent_classifier.pth'):
 
 # Usage example with interactive prompts:
 if __name__ == "__main__":
-    csv_name = input("Enter CSV file name (default: training_data): ") or 'training_data'
-    csv_path = os.path.join('csv', f'{csv_name}.csv')
+    while True:
+        csv_name = input("Enter CSV file name (default: training_data): ") or 'training_data'
+        csv_path = os.path.join('csv', f'{csv_name}.csv')
+        if os.path.exists(csv_path):
+            break
+        print(f'File not found: {csv_path}. Please try again.')
     print(f'Using CSV file: {csv_path}')
 
-    arch = input("Enter model architecture (default: small): ") or 'small'
+    arch = (input("Choose architecture configuration [small/robust] (default: robust): ") or 'robust').strip().lower()
+
     model_name = input("Enter model name (default: CNN_model): ") or 'CNN_model'
     model_path = os.path.join('model', f'{model_name}.pth')
     print(f'Model architecture configuration: {arch}, will be saved to: {model_path}')
