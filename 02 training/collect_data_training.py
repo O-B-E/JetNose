@@ -6,6 +6,7 @@ warm sensors, prompt for labels, and record labeled samples into a CSV
 for training.
 '''
 
+import argparse
 import os
 import sys
 
@@ -15,7 +16,21 @@ sys.path.append(utils_path)
 
 from sensor_collector import SensorDataCollector
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Interactive sensor data-collection."
+    )
+    parser.add_argument(
+        '-s', '--samples',
+        type=int,
+        default=100,
+        help="Number of samples to collect per label (default: 100)."
+    )
+    return parser.parse_args()
+
 def main():
+    args = parse_args()
+
     csv_filename = input("Enter CSV file name (default: training_data): ") or 'training_data'
     csv_file = os.path.join(current_dir, 'csv', f'{csv_filename}.csv')
 
@@ -23,7 +38,7 @@ def main():
     collector = SensorDataCollector(
         csv_file=csv_file,
         sample_freq_hz=4,
-        samples_per_label=100,
+        samples_per_label=args.samples,
         warmup_time=1
     )
     
