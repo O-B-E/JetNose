@@ -165,7 +165,7 @@ def main():
             break
         print(f'Model file not found: {model_path}. Please try again.')
     
-    print(f"Loading Model from path: {model_path}")
+    print(f"Loading Model from path: {os.path.normpath(model_path)}")
     
     model, arch_name, scaler, label_encoder = load_model(path=model_path, device=DEVICE)
 
