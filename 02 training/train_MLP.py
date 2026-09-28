@@ -244,6 +244,7 @@ def train_model( model_name, csv_file='csv/training_data.csv', arch='robust', nu
     pd.DataFrame(history).to_csv(hist_path, index=False)
     with open(hist_path, 'a') as f:
         f.write(f'# {summary}\n')
+        f.write(f'\n# Training file: {os.path.normpath(csv_file)}\n')
     print(f'Training history saved to {hist_path}')
 
     return model, scaler, label_encoder, feature_cols, arch_name
