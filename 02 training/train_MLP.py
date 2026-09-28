@@ -233,7 +233,8 @@ def train_model( model_name, csv_file='csv/training_data.csv', arch='robust', nu
 
     # Restore the best weights before saving.
     model.load_state_dict(best_state)
-    print(f'Restored best model from epoch {best_epoch} (val loss {best_val_loss:.4f}).')
+    summary = f'Restored best model from epoch {best_epoch} (val loss {best_val_loss:.4f}).'
+    print(summary)
 
     # Persist per-epoch history.
     hist_dir = os.path.join(current_dir, history_dir)
@@ -241,6 +242,8 @@ def train_model( model_name, csv_file='csv/training_data.csv', arch='robust', nu
     stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     hist_path = os.path.join(hist_dir, f'training_history_{model_name}_{stamp}.csv')
     pd.DataFrame(history).to_csv(hist_path, index=False)
+    with open(hist_path, 'a') as f:
+        f.write(f'# {summary}\n')
     print(f'Training history saved to {hist_path}')
 
     return model, scaler, label_encoder, feature_cols, arch_name
