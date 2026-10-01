@@ -15,7 +15,6 @@ import sys
 import time
 import argparse
 from datetime import datetime
-from unittest import result
 import torch
 import torch.nn.functional as F
 import pandas as pd
@@ -120,13 +119,7 @@ def predict_window(model, scaler, label_encoder, df_window):
     """
     feature_cols = ['Temp', 'Hum', 'NO2_V', 'Eth_V', 'VOC_V', 'CO_V']
     features = df_window[feature_cols].copy()
-
-    # Match the number of features the scaler was fit on.
-    expected = getattr(scaler, 'n_features_in_', 40)
-    while features.shape[1] < expected:
-        features[f'pad_{features.shape[1]}'] = 0.0
-
-    X = scaler.transform(features.iloc[:, :expected])  # (num_rows, num_features)
+    X = scaler.transform(features)  # (num_rows, num_features)
 
     model.eval()
     with torch.no_grad():

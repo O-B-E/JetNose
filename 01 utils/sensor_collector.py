@@ -10,7 +10,6 @@ import sys
 import os
 import time
 import csv
-import json
 import queue
 import threading
 from datetime import datetime

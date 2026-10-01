@@ -31,7 +31,7 @@ try:
     )
     ARCH_MAP = {'small': ScentCNNsmall, 'robust': ScentCNNrobust}
 except ImportError as e:
-    print(f"\nError: Failed to import Neural Network architecture.")
+    print("\nError: Failed to import Neural Network architecture.")
     print(f"Details: {e}")
     sys.exit(1)
 

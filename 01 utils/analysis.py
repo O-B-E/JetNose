@@ -8,7 +8,6 @@ from inference CSV log files generated during accuracy testing mode.
 import os
 import sys
 import pandas as pd
-from datetime import datetime
 
 
 def analyze_accuracy_log(log_file_path):
