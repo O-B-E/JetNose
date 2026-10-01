@@ -29,12 +29,12 @@ class ScentCNNsmall(nn.Module):
     inputs shaped (batch, num_features) are treated as a single-channel sequence.
     """
 
-    def __init__(self, num_classes=5, in_channels=1, dropout_rate=0.25, num_features=None):
+    def __init__(self, num_classes=4, in_channels=1, dropout_rate=0.25, num_features=None):
         """
         Initialize the ScentCNNsmall model.
 
         Parameters:
-            num_classes (int): Number of target output classes (default 5)
+            num_classes (int): Number of target output classes (default 4)
             in_channels (int): Number of input sensor channels (default 1)
             dropout_rate (float): Probability of dropping out nodes during training (default 0.25)
             num_features (int, optional): Accepted for a uniform constructor signature
@@ -97,12 +97,12 @@ class ScentCNNrobust(nn.Module):
     # rather than single rows. Data/inference code branches on this flag.
     time_series = True
 
-    def __init__(self, num_classes=5, in_channels=6, dropout_rate=0.25, num_features=None):
+    def __init__(self, num_classes=4, in_channels=6, dropout_rate=0.25, num_features=None):
         """
         Initialize the ScentCNNrobust model.
 
         Parameters:
-            num_classes (int): Number of target output classes (default 5)
+            num_classes (int): Number of target output classes (default 4)
             in_channels (int): Number of input sensor channels; one per sensor
                 (default 6: Temp, Hum, NO2_V, Eth_V, VOC_V, CO_V)
             dropout_rate (float): Probability of dropping out nodes during training (default 0.25)
@@ -182,13 +182,13 @@ class ScentMLPSmall(nn.Module):
     the lightweight architecture for edge deployment where model size matters.
     """
 
-    def __init__(self, num_features=6, num_classes=5, dropout_rate=0.3):
+    def __init__(self, num_features=6, num_classes=4, dropout_rate=0.3):
         """
         Initialize the ScentMLPSmall model.
 
         Parameters:
             num_features (int): Number of real input features (default 6)
-            num_classes (int): Number of target output classes (default 5)
+            num_classes (int): Number of target output classes (default 4)
             dropout_rate (float): Dropout probability during training (default 0.3)
         """
         super(ScentMLPSmall, self).__init__()
@@ -216,13 +216,13 @@ class ScentMLPRobust(nn.Module):
     sensor channels. See plan.md for the MLP-vs-CNN rationale.
     """
 
-    def __init__(self, num_features=6, num_classes=5, dropout_rate=0.4):
+    def __init__(self, num_features=6, num_classes=4, dropout_rate=0.4):
         """
         Initialize the ScentMLPRobust model.
 
         Parameters:
             num_features (int): Number of real input features (default 6)
-            num_classes (int): Number of target output classes (default 5)
+            num_classes (int): Number of target output classes (default 4)
             dropout_rate (float): Dropout probability during training (default 0.4)
         """
         super(ScentMLPRobust, self).__init__()
