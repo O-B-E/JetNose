@@ -55,7 +55,7 @@ def parse_args():
         "-f", "--file",
         metavar="FILE_NAME",
         default=None,
-        help="Run the accuracy test on pre-recorded samples in csv/<FILE_NAME> "
+        help="Run the accuracy test on pre-recorded samples in csv/<FILE_NAME>.csv "
              "(no live sensors needed) instead of collecting live data."
     )
     return parser.parse_args()
@@ -346,9 +346,10 @@ def main():
 
     # File-based accuracy test: classify pre-recorded samples, no live sensors.
     while args.file:
-        data_path = os.path.join(current_dir, 'csv', args.file)
+        data_path = os.path.join(current_dir, 'csv', f'{args.file}.csv')
         if not os.path.exists(data_path):
             print(f"Error: Sample file not found: {os.path.normpath(data_path)}")
+            data_path = input("Enter CSV file name (<file_name>.csv): ").strip()
             continue
 
         run_file_accuracy_test(model, arch_name, scaler, label_encoder, model_name, data_path)
