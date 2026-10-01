@@ -29,7 +29,7 @@ class ScentCNNsmall(nn.Module):
     inputs shaped (batch, num_features) are treated as a single-channel sequence.
     """
 
-    def __init__(self, num_classes=5, in_channels=1, dropout_rate=0.25):
+    def __init__(self, num_classes=5, in_channels=1, dropout_rate=0.25, num_features=None):
         """
         Initialize the ScentCNNsmall model.
 
@@ -37,6 +37,8 @@ class ScentCNNsmall(nn.Module):
             num_classes (int): Number of target output classes (default 5)
             in_channels (int): Number of input sensor channels (default 1)
             dropout_rate (float): Probability of dropping out nodes during training (default 0.25)
+            num_features (int, optional): Accepted for a uniform constructor signature
+                but ignored; the network is length-agnostic via global pooling.
         """
         super(ScentCNNsmall, self).__init__()
         self.conv1 = nn.Conv1d(in_channels, 16, kernel_size=3, padding=1)
@@ -95,7 +97,7 @@ class ScentCNNrobust(nn.Module):
     # rather than single rows. Data/inference code branches on this flag.
     time_series = True
 
-    def __init__(self, num_classes=5, in_channels=6, dropout_rate=0.25):
+    def __init__(self, num_classes=5, in_channels=6, dropout_rate=0.25, num_features=None):
         """
         Initialize the ScentCNNrobust model.
 
@@ -104,6 +106,8 @@ class ScentCNNrobust(nn.Module):
             in_channels (int): Number of input sensor channels; one per sensor
                 (default 6: Temp, Hum, NO2_V, Eth_V, VOC_V, CO_V)
             dropout_rate (float): Probability of dropping out nodes during training (default 0.25)
+            num_features (int, optional): Accepted for a uniform constructor signature
+                but ignored; the network is length-agnostic via global pooling.
         """
         super(ScentCNNrobust, self).__init__()
         self.stem = nn.Sequential(
@@ -343,16 +347,12 @@ def load_model(path='model/CNNsmall.pth', device=None):
     model_cls = ARCHITECTURES.get(arch_name, ScentCNNsmall)
 
     if getattr(model_cls, 'time_series', False):
-        # Windowed model: input channels are the sensors, and the length axis is
-        # the window of time steps. num_features carries the window length.
-        window_length = checkpoint.get('window_length', checkpoint.get('num_features'))
-        in_channels = checkpoint.get('in_channels', len(FEATURE_COLS))
+        # Windowed model: input channels are the sensors, length axis is the window.
         model = model_cls(
-            num_features=window_length,
             num_classes=checkpoint['num_classes'],
-            in_channels=in_channels,
+            in_channels=checkpoint.get('in_channels', len(FEATURE_COLS)),
         ).to(device)
-        model.window_length = window_length
+        model.window_length = checkpoint.get('window_length', checkpoint.get('num_features'))
         model.window_stride = checkpoint.get('window_stride', DEFAULT_WINDOW_STRIDE)
     else:
         model = model_cls(

@@ -131,17 +131,19 @@ def train_model(model_name, csv_file='csv/training_data.csv', num_epochs=300, lr
     # Initialize model
     num_classes = len(label_encoder.classes_)
     if time_series:
-        # X_train shape: (num_windows, num_sensors, window_length)
+        # X_train shape: (num_windows, num_sensors, window_length). The CNN is
+        # length-agnostic (global pooling), so it only needs in_channels.
         in_channels = X_train.shape[1]
         win_len = X_train.shape[2]
-        model = model_cls(num_features=win_len, num_classes=num_classes, in_channels=in_channels).to(device)
+        model = model_cls(num_classes=num_classes, in_channels=in_channels).to(device)
         # Record the window contract so save_model/load_model can round-trip it.
         model.window_length = win_len
         model.window_stride = window_stride
         num_features = win_len
     else:
+        # Row-based CNN (ScentCNNsmall): single-channel input, length-agnostic.
         num_features = X_train.shape[1]
-        model = model_cls(num_features=num_features, num_classes=num_classes).to(device)
+        model = model_cls(num_classes=num_classes).to(device)
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
