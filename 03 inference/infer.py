@@ -95,10 +95,16 @@ def collect_window_as_df(collector, label="inference", num_samples=10):
 
 def predict_window(model, scaler, label_encoder, df_window):
     """
-    Perform inference on a DataFrame window of sensor samples and aggregate prediction probabilities.
+    Perform inference on a DataFrame window of sensor samples and return class probabilities.
 
-    Scales raw input features, computes softmax class probabilities for each sample in the window,
-    calculates average confidence across the window, and identifies the top predicted class.
+    Dispatches on the model type:
+
+    - Single-sample models (MLPs, ScentCNNsmall): each row in the window is
+      classified independently and the softmax probabilities are averaged over the
+      window (window = a smoothing device over independent per-row predictions).
+    - Time-series model (ScentCNNrobust): the whole window is fed as a single
+      sample shaped (1, sensors, window_length), producing one set of class
+      probabilities directly (window = the atomic unit the model classifies).
 
     Parameters:
         model (nn.Module): Trained PyTorch model instance
@@ -108,9 +114,9 @@ def predict_window(model, scaler, label_encoder, df_window):
 
     Returns:
         tuple: (best_class, best_conf, class_conf_dict) where:
-            best_class (str): Name of predicted class with highest average confidence
+            best_class (str): Name of predicted class with highest confidence
             best_conf (float): Percentage confidence score for top predicted class
-            class_conf_dict (dict): Dictionary mapping each class name to its mean confidence percentage
+            class_conf_dict (dict): Dictionary mapping each class name to its confidence percentage
     """
     feature_cols = ['Temp', 'Hum', 'NO2_V', 'Eth_V', 'VOC_V', 'CO_V']
     features = df_window[feature_cols].copy()
@@ -120,17 +126,20 @@ def predict_window(model, scaler, label_encoder, df_window):
     while features.shape[1] < expected:
         features[f'pad_{features.shape[1]}'] = 0.0
 
-    X = scaler.transform(features.iloc[:, :expected])
-    inputs = torch.FloatTensor(X).to(DEVICE)
+    X = scaler.transform(features.iloc[:, :expected])  # (num_rows, num_features)
 
     model.eval()
     with torch.no_grad():
-        logits = model(inputs)
-        probs = F.softmax(logits, dim=1)  # shape: [N, num_classes]
-
-    # average probabilities over the window
-    mean_probs = probs.mean(dim=0)  # [num_classes]
-    conf_vals = mean_probs.cpu().numpy()
+        if getattr(model, 'time_series', False):
+            # One window = one sample: (rows, sensors) -> (1, sensors, time).
+            inputs = torch.FloatTensor(X).t().unsqueeze(0).to(DEVICE)
+            logits = model(inputs)                      # (1, num_classes)
+            conf_vals = F.softmax(logits, dim=1)[0].cpu().numpy()
+        else:
+            inputs = torch.FloatTensor(X).to(DEVICE)    # (rows, features)
+            logits = model(inputs)                      # (rows, num_classes)
+            probs = F.softmax(logits, dim=1)
+            conf_vals = probs.mean(dim=0).cpu().numpy()  # average over the window
 
     # final class index and confidence
     best_idx = int(conf_vals.argmax())
@@ -146,15 +155,20 @@ def predict_window(model, scaler, label_encoder, df_window):
     return best_class, best_conf, class_conf_dict
 
 
-def pretty_print_confidences(class_conf_dict, best_class):
+def pretty_print_confidences(class_conf_dict, best_class, num_samples=SAMPLES_PER_ROUND, aggregated=True):
     """
     Format and print per-class confidence percentages to the console.
 
     Parameters:
         class_conf_dict (dict): Dictionary mapping class names to confidence percentages
         best_class (str): Name of top predicted class to highlight with an arrow
+        num_samples (int): Number of samples in the window that produced this prediction
+        aggregated (bool): True when the scores are averaged over per-row predictions
+            (single-sample models); False when the whole window is one sample
+            (time-series model)
     """
-    print(f"\nWindow prediction ({SAMPLES_PER_ROUND} samples aggregated):")
+    how = "samples aggregated" if aggregated else "sample window"
+    print(f"\nWindow prediction ({num_samples} {how}):")
     for cls, conf in class_conf_dict.items():
         mark = "<--" if cls == best_class else "   "
         print(f"{cls:15s}: {conf:6.2f}% {mark}")
@@ -239,14 +253,25 @@ def run_file_accuracy_test(model, arch_name, scaler, label_encoder, model_name, 
     log_rows = []
     total = correct = 0
 
+    # The time-series model classifies one full window at a time, so chunk at its
+    # trained window length and drop trailing partial windows (which are also too
+    # short to survive the network's two max-pool stages). Single-sample models
+    # keep the original fixed round size and accept any non-empty chunk.
+    time_series = getattr(model, 'time_series', False)
+    window_size = int(getattr(model, 'window_length', SAMPLES_PER_ROUND)) if time_series else SAMPLES_PER_ROUND
+
     print(f"\nRunning file-based accuracy test on: {os.path.normpath(data_path)}")
-    print(f"Windowing {len(df)} samples into rounds of {SAMPLES_PER_ROUND}...\n")
+    print(f"Windowing {len(df)} samples into rounds of {window_size}"
+          f"{' (full windows only)' if time_series else ''}...\n")
 
     for _, seg_df in df.groupby(segment_id, sort=False):
         label = str(seg_df['Label'].iloc[0])
-        for start in range(0, len(seg_df), SAMPLES_PER_ROUND):
-            window = seg_df.iloc[start:start + SAMPLES_PER_ROUND]
+        for start in range(0, len(seg_df), window_size):
+            window = seg_df.iloc[start:start + window_size]
             if window.empty:
+                continue
+            if time_series and len(window) < window_size:
+                # Skip a trailing partial window: the CNN expects full-length windows.
                 continue
 
             best_class, best_conf, class_conf_dict = predict_window(
@@ -321,6 +346,11 @@ def main():
 
     model, arch_name, scaler, label_encoder = load_model(path=model_path, device=DEVICE)
 
+    # For the time-series model, live windows must match its trained window length;
+    # single-sample models use the fixed per-round sample count.
+    is_time_series = getattr(model, 'time_series', False)
+    round_size = int(getattr(model, 'window_length', SAMPLES_PER_ROUND)) if is_time_series else SAMPLES_PER_ROUND
+
     # File-based accuracy test: classify pre-recorded samples, no live sensors.
     if args.file:
         data_path = os.path.join(current_dir, 'csv', args.file)
@@ -365,11 +395,11 @@ def main():
             while True:
                 # Run a fixed batch of classification rounds for the current label.
                 print(f"\nCollecting {ROUNDS_PER_LABEL} rounds "
-                      f"({ROUNDS_PER_LABEL * SAMPLES_PER_ROUND} samples) "
+                      f"({ROUNDS_PER_LABEL * round_size} samples) "
                       f"for ground truth '{current_ground_truth}'...\n")
                 for round_idx in range(ROUNDS_PER_LABEL):
                     df_window = collect_window_as_df(
-                        collector, label=current_ground_truth, num_samples=SAMPLES_PER_ROUND
+                        collector, label=current_ground_truth, num_samples=round_size
                     )
                     best_class, best_conf, class_conf_dict = predict_window(
                         model, scaler, label_encoder, df_window
@@ -381,7 +411,8 @@ def main():
                         class_conf_dict,
                         label=current_ground_truth,
                     )
-                    pretty_print_confidences(class_conf_dict, best_class)
+                    pretty_print_confidences(class_conf_dict, best_class,
+                                             num_samples=round_size, aggregated=not is_time_series)
                     is_match = (best_class.lower() == current_ground_truth.lower())
                     status_symbol = "MATCH" if is_match else "MISMATCH"
                     print(f"[Round {round_idx + 1}/{ROUNDS_PER_LABEL} | "
@@ -407,7 +438,7 @@ def main():
                 print(f"Ground truth updated to: '{current_ground_truth}'.")
         else:
             while True:
-                df_window = collect_window_as_df(collector, label='', num_samples=SAMPLES_PER_ROUND)
+                df_window = collect_window_as_df(collector, label='', num_samples=round_size)
                 best_class, best_conf, class_conf_dict = predict_window(
                     model, scaler, label_encoder, df_window
                 )
@@ -417,7 +448,8 @@ def main():
                     best_conf,
                     class_conf_dict,
                 )
-                pretty_print_confidences(class_conf_dict, best_class)
+                pretty_print_confidences(class_conf_dict, best_class,
+                                         num_samples=round_size, aggregated=not is_time_series)
 
     except KeyboardInterrupt:
         print("\nInference stopped by user.")

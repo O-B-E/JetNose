@@ -6,8 +6,17 @@ helper functions for loading model checkpoints and performing inference
 on new sensor data.
 """
 
+import numpy as np
 import torch
 import torch.nn as nn
+
+# Canonical sensor feature columns, in the order models expect them.
+FEATURE_COLS = ['Temp', 'Hum', 'NO2_V', 'Eth_V', 'VOC_V', 'CO_V']
+
+# Defaults for the time-series (windowed) architecture. A window is this many
+# consecutive readings; the stride controls overlap when slicing training data.
+DEFAULT_WINDOW_LENGTH = 15
+DEFAULT_WINDOW_STRIDE = 5
 
 
 class ScentCNNsmall(nn.Module):
@@ -20,13 +29,11 @@ class ScentCNNsmall(nn.Module):
     inputs shaped (batch, num_features) are treated as a single-channel sequence.
     """
 
-    def __init__(self, num_features=6, num_classes=5, in_channels=1, dropout_rate=0.25):
+    def __init__(self, num_classes=5, in_channels=1, dropout_rate=0.25):
         """
         Initialize the ScentCNNsmall model.
 
         Parameters:
-            num_features (int): Input sequence length (default 6). Informational
-                only; the network is length-agnostic thanks to global pooling.
             num_classes (int): Number of target output classes (default 5)
             in_channels (int): Number of input sensor channels (default 1)
             dropout_rate (float): Probability of dropping out nodes during training (default 0.25)
@@ -65,21 +72,37 @@ class ScentCNNsmall(nn.Module):
 
 class ScentCNNrobust(nn.Module):
     """
-    1D Convolutional Neural Network architecture for scent classification.
+    Multivariate time-series 1D CNN for scent classification.
 
-    Optimized for edge deployment on NVIDIA Jetson Nano. Uses multi-stage 1D
-    convolutions, batch normalization, max pooling, and global average pooling
-    to extract local feature dynamics from multi-sensor telemetry.
+    Unlike the single-sample models, this network operates on a *window* of
+    consecutive readings. The six sensors are placed on the channel axis and
+    time is placed on the length axis, so the input is shaped
+    (batch, in_channels=6, window_length). With this layout, convolution is
+    justified: it slides shared kernels along the real (ordered) time axis to
+    capture temporal dynamics, and because every Conv1d filter spans all input
+    channels, it learns cross-sensor combinations at every time step. This
+    directly exploits the inter-sensor relationships that the sensor-as-sequence
+    models could not.
+
+    Architecture: a convolutional stem, three convolutional blocks that widen
+    the channels (6 -> 32 -> 64 -> 128 -> 128) while the two middle blocks
+    downsample time via stride-2 max pooling, then global average pooling over
+    time and a two-layer classifier head. Global pooling keeps the network
+    agnostic to the exact window length.
     """
 
-    def __init__(self, num_features=6, num_classes=5, in_channels=1, dropout_rate=0.25):
+    # Marks this architecture as consuming windows shaped (batch, sensors, time)
+    # rather than single rows. Data/inference code branches on this flag.
+    time_series = True
+
+    def __init__(self, num_classes=5, in_channels=6, dropout_rate=0.25):
         """
         Initialize the ScentCNNrobust model.
 
         Parameters:
-            num_features (int): Number of input features/sequence length (default 40)
             num_classes (int): Number of target output classes (default 5)
-            in_channels (int): Number of input sensor channels (default 1)
+            in_channels (int): Number of input sensor channels; one per sensor
+                (default 6: Temp, Hum, NO2_V, Eth_V, VOC_V, CO_V)
             dropout_rate (float): Probability of dropping out nodes during training (default 0.25)
         """
         super(ScentCNNrobust, self).__init__()
@@ -118,16 +141,23 @@ class ScentCNNrobust(nn.Module):
 
     def forward(self, x):
         """
-        Perform forward pass through the 1D CNN network.
+        Perform forward pass through the time-series 1D CNN.
 
         Parameters:
-            x (torch.Tensor): Input tensor of shape (batch_size, num_features) or (batch_size, channels, sequence_length)
+            x (torch.Tensor): Input tensor of shape
+                (batch_size, in_channels, window_length), i.e. sensors on the
+                channel axis and time on the length axis.
 
         Returns:
             torch.Tensor: Unnormalized class logits output by the network
         """
-        if x.dim() == 2:
-            x = x.unsqueeze(1)
+        if x.dim() != 3:
+            raise ValueError(
+                'ScentCNNrobust expects a 3D input of shape '
+                '(batch, in_channels, window_length); got shape '
+                f'{tuple(x.shape)}. This model consumes windows of consecutive '
+                'readings with sensors on the channel axis, not single rows.'
+            )
 
         x = self.stem(x)
         x = self.block1(x)
@@ -224,6 +254,72 @@ ARCHITECTURES = {
 }
 
 
+def make_windows(X, y=None, window_length=DEFAULT_WINDOW_LENGTH, stride=DEFAULT_WINDOW_STRIDE):
+    """
+    Slice a (rows, features) array into sliding windows for the time-series model.
+
+    Each window is transposed to (features, window_length) so that features
+    (sensors) become the channel axis and time becomes the length axis, matching
+    ScentCNNrobust's expected input.
+
+    Parameters:
+        X (array-like): Scaled feature matrix of shape (num_rows, num_features).
+        y (array-like, optional): Per-row integer labels of shape (num_rows,). When
+            provided, windows are cut only within consecutive same-label segments
+            (never spanning a label change), and each window inherits its
+            segment's label.
+        window_length (int): Number of consecutive readings per window.
+        stride (int): Step between successive window start indices (stride <
+            window_length yields overlapping windows).
+
+    Returns:
+        numpy.ndarray: Windows of shape (num_windows, num_features, window_length)
+            when y is None.
+        tuple(numpy.ndarray, numpy.ndarray): (windows, window_labels) when y is
+            provided.
+
+    Notes:
+        Segments shorter than window_length produce no windows and are skipped.
+    """
+    X = np.asarray(X, dtype=np.float32)
+
+    def _slice(block):
+        # block: (rows, features) -> list of (features, window_length)
+        out = []
+        for start in range(0, len(block) - window_length + 1, stride):
+            out.append(block[start:start + window_length].T)  # (features, W)
+        return out
+
+    if y is None:
+        windows = _slice(X)
+        if not windows:
+            raise ValueError(
+                f'Cannot form a window of length {window_length} from only '
+                f'{len(X)} rows. Provide at least {window_length} consecutive '
+                'readings.'
+            )
+        return np.stack(windows)
+
+    y = np.asarray(y)
+    # Consecutive same-label segment ids (so a window never mixes two labels).
+    seg_ids = np.concatenate([[0], np.cumsum(y[1:] != y[:-1])]) if len(y) else np.array([], dtype=int)
+
+    win_list, lab_list = [], []
+    for seg in np.unique(seg_ids):
+        idx = np.where(seg_ids == seg)[0]
+        seg_windows = _slice(X[idx])
+        win_list.extend(seg_windows)
+        lab_list.extend([y[idx[0]]] * len(seg_windows))
+
+    if not win_list:
+        raise ValueError(
+            f'No windows of length {window_length} could be formed; every '
+            'same-label segment is shorter than the window. Reduce '
+            'window_length or collect longer runs per label.'
+        )
+    return np.stack(win_list), np.asarray(lab_list)
+
+
 def load_model(path='model/CNNsmall.pth', device=None):
     """
     Load saved PyTorch model checkpoint along with feature scaler and label encoder.
@@ -233,7 +329,9 @@ def load_model(path='model/CNNsmall.pth', device=None):
         device (torch.device, optional): Hardware device to run model on (CPU or CUDA)
 
     Returns:
-        tuple: (model, scaler, label_encoder) where model is set to evaluation mode
+        tuple: (model, arch_name, scaler, label_encoder) where model is set to
+            evaluation mode. For time-series architectures the returned model also
+            carries a ``window_length`` attribute (the window size to feed it).
     """
     if device is None:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -243,51 +341,96 @@ def load_model(path='model/CNNsmall.pth', device=None):
     # Backward compatible: older checkpoints have no 'arch' key -> ScentCNNsmall.
     arch_name = checkpoint.get('arch', 'ScentCNNsmall')
     model_cls = ARCHITECTURES.get(arch_name, ScentCNNsmall)
-    model = model_cls(
-        num_features=checkpoint['num_features'],
-        num_classes=checkpoint['num_classes']
-    ).to(device)
+
+    if getattr(model_cls, 'time_series', False):
+        # Windowed model: input channels are the sensors, and the length axis is
+        # the window of time steps. num_features carries the window length.
+        window_length = checkpoint.get('window_length', checkpoint.get('num_features'))
+        in_channels = checkpoint.get('in_channels', len(FEATURE_COLS))
+        model = model_cls(
+            num_features=window_length,
+            num_classes=checkpoint['num_classes'],
+            in_channels=in_channels,
+        ).to(device)
+        model.window_length = window_length
+        model.window_stride = checkpoint.get('window_stride', DEFAULT_WINDOW_STRIDE)
+    else:
+        model = model_cls(
+            num_features=checkpoint['num_features'],
+            num_classes=checkpoint['num_classes'],
+        ).to(device)
+
     model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
 
     scaler = checkpoint['scaler']
     label_encoder = checkpoint['label_encoder']
 
-    print(f'Model loaded (arch={arch_name}).')
+    extra = ''
+    if getattr(model, 'time_series', False):
+        extra = f', window_length={getattr(model, "window_length", "?")}'
+    print(f'Model loaded (arch={arch_name}{extra}).')
     return model, arch_name, scaler, label_encoder
 
 
-def predict(model, scaler, label_encoder, new_data_df, device=None):
+def _scale_features(scaler, new_data_df):
+    """
+    Extract and scale the sensor feature columns from a DataFrame.
+
+    Pads with zero columns when the scaler was fit on more features than are
+    present (legacy padded checkpoints), then applies the scaler.
+
+    Returns:
+        numpy.ndarray: Scaled feature matrix of shape (num_rows, expected_features).
+    """
+    features = new_data_df[FEATURE_COLS].copy()
+    expected = getattr(scaler, 'n_features_in_', len(FEATURE_COLS))
+    while features.shape[1] < expected:
+        features[f'pad_{features.shape[1]}'] = 0.0
+    return scaler.transform(features.iloc[:, :expected])
+
+
+def predict(model, scaler, label_encoder, new_data_df, device=None,
+            window_length=None, stride=None):
     """
     Run model inference on a DataFrame of sensor readings.
 
-    Extracts required feature columns, pads feature vector to 40 inputs,
-    scales data, and runs forward inference to return predicted label strings.
+    Dispatches on the model type:
+
+    - Single-sample models (MLPs, ScentCNNsmall): each row is classified
+      independently, returning one predicted label per row.
+    - Time-series model (ScentCNNrobust): the rows are sliced into windows of
+      shape (sensors, window_length) and each window is classified, returning one
+      predicted label per window.
 
     Parameters:
-        model (ScentCNNsmall): Trained PyTorch model instance
+        model (nn.Module): Trained PyTorch model instance
         scaler (StandardScaler): Scaler instance used for feature normalization
         label_encoder (LabelEncoder): Encoder mapping numeric predictions back to class labels
         new_data_df (pandas.DataFrame): DataFrame containing raw sensor measurements
         device (torch.device, optional): Hardware device to run inference on (CPU or CUDA)
+        window_length (int, optional): Window size for the time-series model;
+            defaults to the model's stored ``window_length``. Ignored otherwise.
+        stride (int, optional): Window stride for the time-series model; defaults
+            to the model's stored ``window_stride`` (or non-overlapping). Ignored
+            otherwise.
 
     Returns:
-        numpy.ndarray: Array of predicted class label names
+        numpy.ndarray: Array of predicted class label names (one per row for
+            single-sample models, one per window for the time-series model).
     """
     if device is None:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    feature_cols = ['Temp', 'Hum', 'NO2_V', 'Eth_V', 'VOC_V', 'CO_V']
-    features = new_data_df[feature_cols].copy()
+    X_new = _scale_features(scaler, new_data_df)
 
-    # Match the number of features the scaler was fit on. New models are trained
-    # on the real feature count (no padding); legacy models were padded to 40.
-    expected = getattr(scaler, 'n_features_in_', len(feature_cols))
-    while features.shape[1] < expected:
-        features[f'pad_{features.shape[1]}'] = 0.0
-
-    X_new = scaler.transform(features.iloc[:, :expected])
-    inputs = torch.FloatTensor(X_new).to(device)
+    if getattr(model, 'time_series', False):
+        w = window_length or getattr(model, 'window_length', DEFAULT_WINDOW_LENGTH)
+        s = stride or w  # default: non-overlapping windows (one label per window)
+        windows = make_windows(X_new, window_length=w, stride=s)  # (N, sensors, W)
+        inputs = torch.FloatTensor(windows).to(device)
+    else:
+        inputs = torch.FloatTensor(X_new).to(device)
 
     model.eval()
     with torch.no_grad():
