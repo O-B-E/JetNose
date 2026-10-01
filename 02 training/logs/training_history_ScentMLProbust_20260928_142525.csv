@@ -53,4 +53,4 @@ epoch,train_loss,val_loss,val_acc,lr
 52,0.005223894781374838,0.01302085804082708,99.375,0.0005
 # Training completed. Restored best model from epoch 42 (val loss 0.0045).
 
-# Training file: /home/nose/Documents/nose_V4/02 training/csv/training_samples.csv
+# Training file: csv/training_samples.csv
