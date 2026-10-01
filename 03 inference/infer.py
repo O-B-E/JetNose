@@ -345,9 +345,9 @@ def main():
     round_size = int(getattr(model, 'window_length', SAMPLES_PER_ROUND)) if is_time_series else SAMPLES_PER_ROUND
 
     # File-based accuracy test: classify pre-recorded samples, no live sensors.
-    while args.file:
+    if args.file:
         data_path = os.path.join(current_dir, 'csv', f'{args.file}.csv')
-        if not os.path.exists(data_path):
+        while not os.path.exists(data_path):
             print(f"Error: Sample file not found: {os.path.normpath(data_path)}")
             data_path = input("Enter CSV file name (<file_name>.csv): ").strip()
             continue
