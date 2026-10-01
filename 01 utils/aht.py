@@ -8,7 +8,6 @@ Based on the official library https://github.com/adafruit/Adafruit_AHTX0
 """
 
 import time
-from smbus2 import SMBus
 
 # AHT2x I²C Constants
 AHT_I2C_ADDR = 0x38  # Default I2C address

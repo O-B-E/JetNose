@@ -8,7 +8,6 @@ Based on the official library https://github.com/Seeed-Studio/Seeed_Arduino_Mult
 """
 
 import time
-from smbus2 import SMBus, i2c_msg
 
 # GMXXX Gas Sensor I2C Constants
 GM_ADDR = 0x08
