@@ -350,7 +350,7 @@ def main():
         while not os.path.exists(data_path):
             print(f"Error: Sample file not found: {os.path.normpath(data_path)}")
             data_path = input("Enter CSV file name (<file_name>.csv): ").strip()
-            data_path = os.path.join(current_dir, 'csv', f'{args.file}.csv')
+            data_path = os.path.join(current_dir, 'csv', f'{data_path}.csv')
             continue
 
         run_file_accuracy_test(model, arch_name, scaler, label_encoder, model_name, data_path)
