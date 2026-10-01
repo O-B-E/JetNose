@@ -345,14 +345,13 @@ def main():
     round_size = int(getattr(model, 'window_length', SAMPLES_PER_ROUND)) if is_time_series else SAMPLES_PER_ROUND
 
     # File-based accuracy test: classify pre-recorded samples, no live sensors.
-    if args.file:
+    while args.file:
         data_path = os.path.join(current_dir, 'csv', args.file)
         if not os.path.exists(data_path):
             print(f"Error: Sample file not found: {os.path.normpath(data_path)}")
-            return
-        run_file_accuracy_test(
-            model, arch_name, scaler, label_encoder, model_name, data_path
-        )
+            continue
+
+        run_file_accuracy_test(model, arch_name, scaler, label_encoder, model_name, data_path)
         return
 
     # Initial Ground Truth Prompt if accuracy-test mode
