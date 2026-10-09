@@ -1,0 +1,31 @@
+==============================================================================
+MODEL COMPARISON
+==============================================================================
+
+1. Summary
+----------
+Overlapping 95% CIs mean the models cannot be ranked with confidence.
+
+Model           Windows    Accuracy [95% CI]    Macro-F1 [95% CI]  Never-recovered segs    ECE
+--------------  -------  -------------------  -------------------  --------------------  -----
+ScentMLPsmall       280  81.8% [65.0%-95.0%]  81.3% [65.8%-94.4%]                     1  11.8%
+ScentMLProbust      280  82.9% [65.0%-96.4%]  81.8% [65.5%-96.0%]                     2  16.2%
+ScentCNNsmall       280  70.4% [52.5%-86.1%]  69.9% [52.6%-84.2%]                     3  20.8%
+ScentCNNrobust      260  83.8% [69.2%-95.4%]  83.8% [68.1%-94.5%]                     2   9.7%
+
+2. McNemar's test (paired, exact)
+---------------------------------
+Only windows both models classified are used. "A only" = A right, B wrong.
+p < 0.05: the accuracy difference is unlikely to be chance.
+Windows within a segment are correlated, so treat p-values as approximate.
+
+A vs B                            Paired  Acc A  Acc B  A only  B only  p-value           Result
+--------------------------------  ------  -----  -----  ------  ------  -------  ---------------
+ScentMLPsmall vs ScentMLProbust      280  81.8%  82.9%       6       9    0.607  not significant
+ScentMLPsmall vs ScentCNNsmall       280  81.8%  70.4%      35       3   <0.001      significant
+ScentMLPsmall vs ScentCNNrobust      260  81.5%  83.8%       4      10    0.180  not significant
+ScentMLProbust vs ScentCNNsmall      280  82.9%  70.4%      43       8   <0.001      significant
+ScentMLProbust vs ScentCNNrobust     260  82.7%  83.8%      12      15    0.701  not significant
+ScentCNNsmall vs ScentCNNrobust      260  70.4%  83.8%       5      40   <0.001      significant
+
+==============================================================================

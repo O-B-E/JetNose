@@ -1,0 +1,96 @@
+Model: ScentMLPsmall
+==============================================================================
+ACCURACY TEST ANALYSIS
+==============================================================================
+
+1. Summary
+----------
+95% CI: bootstrap over whole segments (2000 resamples),
+since windows within a segment are correlated.
+
+Metric                        Value         95% CI
+------------------  ---------------  -------------
+Windows classified              280               
+Accuracy            81.8% (229/280)  65.0% - 95.0%
+Macro-F1                      81.3%  65.8% - 94.4%
+
+2. Confusion matrix
+-------------------
+Rows = true class, columns = predicted class. Diagonal = correct windows.
+
+True \ Pred  air  alcohol  coffee  lemon
+-----------  ---  -------  ------  -----
+air           68        0       0      2
+alcohol        0       70       0      0
+coffee         0        0      57     13
+lemon         36        0       0     34
+
+3. Per-class metrics
+--------------------
+Precision: of windows predicted as the class, share that were correct (false alarms).
+Recall: of windows of the class, share that were detected (missed detections).
+F1: harmonic mean of the two. Support: true windows of the class.
+
+Class    Precision  Recall      F1  Support
+-------  ---------  ------  ------  -------
+air          65.4%   97.1%   78.2%       70
+alcohol     100.0%  100.0%  100.0%       70
+coffee      100.0%   81.4%   89.8%       70
+lemon        69.4%   48.6%   57.1%       70
+
+Macro-F1 (unweighted mean of class F1): 81.3%
+
+4. Recovery after odor change
+-----------------------------
+Correct at start: first window of the segment right (delay 0).
+Recovered late: first window wrong, a later one right. Mean delay covers these only.
+Never recovered: no window of the segment classified correctly.
+
+Class    Segments  Correct at start  Recovered late  Never recovered  Mean delay
+-------  --------  ----------------  --------------  ---------------  ----------
+air             5                 4               1                0       7.5 s
+alcohol         5                 5               0                0           -
+coffee          5                 3               2                0      24.5 s
+lemon           5                 4               0                1           -
+
+Per segment:
+#   True class  Windows  Accuracy    Start   Delay
+--  ----------  -------  --------  -------  ------
+1   air              14    100.0%  correct       -
+2   coffee           14     14.3%     late  45.2 s
+3   alcohol          14    100.0%  correct       -
+4   lemon            14    100.0%  correct       -
+5   air              14     85.7%     late   7.5 s
+6   coffee           14     92.9%     late   3.8 s
+7   alcohol          14    100.0%  correct       -
+8   lemon            14    100.0%  correct       -
+9   air              14    100.0%  correct       -
+10  coffee           14    100.0%  correct       -
+11  alcohol          14    100.0%  correct       -
+12  lemon            14     21.4%  correct       -
+13  air              14    100.0%  correct       -
+14  coffee           14    100.0%  correct       -
+15  alcohol          14    100.0%  correct       -
+16  lemon            14     21.4%  correct       -
+17  air              14    100.0%  correct       -
+18  coffee           14    100.0%  correct       -
+19  alcohol          14    100.0%  correct       -
+20  lemon            14      0.0%    NEVER       -
+
+5. Calibration
+--------------
+Does confidence match accuracy? Gap = mean confidence - accuracy;
+positive = overconfident. ECE = window-weighted mean |gap| (0 is perfect).
+
+Confidence  Windows  Mean confidence  Accuracy        Gap
+----------  -------  ---------------  --------  ---------
+40-50%            2            46.1%     50.0%   -3.9 pts
+50-60%           14            55.4%     71.4%  -16.0 pts
+60-70%           14            65.3%     57.1%   +8.1 pts
+70-80%            9            74.6%     55.6%  +19.1 pts
+80-90%           32            84.8%     65.6%  +19.2 pts
+90-100%         209            98.4%     88.0%  +10.3 pts
+
+Expected Calibration Error (ECE): 11.8%
+
+==============================================================================
