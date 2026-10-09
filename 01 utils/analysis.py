@@ -12,6 +12,7 @@ Usage:
 Log names may be given as bare file names; they are looked up in 03 inference/logs.
 """
 
+import argparse
 import math
 import os
 import sys
@@ -412,9 +413,13 @@ def _resolve(path):
 
 
 if __name__ == '__main__':
-    paths = [_resolve(p) for p in sys.argv[1:]]
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('logs', nargs='*', help='accuracy-test log CSV(s); bare names are looked up in 03 inference/logs')
+    args = parser.parse_args()
+    paths = [_resolve(p) for p in args.logs]
     if not paths:
-        print(__doc__)
+        parser.print_help()
     elif len(paths) == 1:
         analyze_accuracy_log(paths[0])
     else:

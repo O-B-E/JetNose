@@ -15,6 +15,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 import pandas as pd
+import argparse
 import copy
 import os
 import sys
@@ -317,6 +318,9 @@ def save_model(model, scaler, label_encoder, path='model/scent_classifier.pth'):
 
 # Usage example with interactive prompts:
 if __name__ == "__main__":
+    argparse.ArgumentParser(description=__doc__ + "\nAll options are prompted for interactively.",
+                            formatter_class=argparse.RawDescriptionHelpFormatter).parse_args()
+
     while True:
         csv_name = input("Enter CSV file name (default: training_data): ") or 'training_data'
         csv_path = os.path.join('csv', f'{csv_name}.csv')
