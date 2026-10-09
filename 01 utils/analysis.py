@@ -13,6 +13,7 @@ Log names may be given as bare file names; they are looked up in 03 inference/lo
 """
 
 import argparse
+import csv
 import math
 import os
 import sys
@@ -50,7 +51,15 @@ def load_log(log_file_path):
         print(f"Error: Log file not found: {log_file_path}")
         return None
 
-    raw = pd.read_csv(log_file_path, on_bad_lines='skip', dtype=str)
+    # Parse with the csv module and keep only full-width rows, so text appended
+    # after the data is skipped on any pandas version.
+    with open(log_file_path, newline='', encoding='utf-8') as f:
+        rows = list(csv.reader(f))
+    if not rows:
+        print(f"Warning: Log file '{log_file_path}' is empty.")
+        return None
+    header = rows[0]
+    raw = pd.DataFrame([r for r in rows[1:] if len(r) == len(header)], columns=header)
     cols = {c.strip().lower(): c for c in raw.columns}
     if 'label' not in cols or 'prediction' not in cols:
         print(f"Error: '{log_file_path}' needs 'Label' and 'Prediction' columns. "
@@ -126,10 +135,10 @@ def bootstrap_ci(df):
     """
     segments = [(g['Label'].to_numpy(), g['Prediction'].to_numpy())
                 for _, g in df.groupby('Segment')]
-    rng = np.random.default_rng(BOOTSTRAP_SEED)
+    rng = np.random.RandomState(BOOTSTRAP_SEED)
     accs, f1s = [], []
     for _ in range(BOOTSTRAP_ITERATIONS):
-        picks = rng.integers(0, len(segments), len(segments))
+        picks = rng.randint(0, len(segments), len(segments))
         y = np.concatenate([segments[i][0] for i in picks])
         p = np.concatenate([segments[i][1] for i in picks])
         accs.append(np.mean(y == p))
@@ -200,7 +209,8 @@ def mcnemar_exact(b, c):
     n = b + c
     if n == 0:
         return 1.0
-    tail = sum(math.comb(n, k) for k in range(min(b, c) + 1)) / 2 ** n
+    tail = sum(math.factorial(n) // (math.factorial(k) * math.factorial(n - k))
+               for k in range(min(b, c) + 1)) / 2 ** n
     return min(1.0, 2 * tail)
 
 
