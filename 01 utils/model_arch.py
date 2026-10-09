@@ -7,6 +7,7 @@ on new sensor data.
 """
 
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 
@@ -256,6 +257,33 @@ ARCHITECTURES = {
     'ScentMLPSmall': ScentMLPSmall,
     'ScentMLPRobust': ScentMLPRobust,
 }
+
+
+def assign_groups(df, gap_seconds=2.0):
+    """
+    Assign a recording-run id to each row so that adjacent, near-duplicate
+    readings stay together on one side of a train/val split.
+
+    A new run starts whenever the Label changes or the time gap between two
+    consecutive rows exceeds ``gap_seconds``.
+
+    Parameters:
+        df (pandas.DataFrame): Dataset containing 'Label' and (optionally) 'Timestamp'.
+        gap_seconds (float): Time gap (seconds) that marks a new recording run.
+
+    Returns:
+        numpy.ndarray: Integer run id per row.
+    """
+    if 'Timestamp' in df.columns:
+        ts = pd.to_datetime(df['Timestamp'], errors='coerce')
+        gap = ts.diff().dt.total_seconds().fillna(0.0)
+        new_run = gap > gap_seconds
+    else:
+        new_run = pd.Series(False, index=df.index)
+
+    label_change = df['Label'].ne(df['Label'].shift()).fillna(True)
+    boundaries = (new_run | label_change).astype(int)
+    return boundaries.cumsum().to_numpy()
 
 
 def make_windows(X, y=None, window_length=DEFAULT_WINDOW_LENGTH, stride=DEFAULT_WINDOW_STRIDE):

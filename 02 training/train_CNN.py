@@ -8,7 +8,8 @@ and label encoders.
 """
 
 from sklearn.preprocessing import StandardScaler, LabelEncoder
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GroupShuffleSplit
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -26,7 +27,7 @@ sys.path.append(utils_path)
 
 try:
     from model_arch import (
-        ScentCNNsmall, ScentCNNrobust, make_windows, FEATURE_COLS,
+        ScentCNNsmall, ScentCNNrobust, make_windows, assign_groups, FEATURE_COLS,
         DEFAULT_WINDOW_LENGTH, DEFAULT_WINDOW_STRIDE,
     )
     ARCH_MAP = {'small': ScentCNNsmall, 'robust': ScentCNNrobust}
@@ -36,72 +37,102 @@ except ImportError as e:
     sys.exit(1)
 
 
-def prepare_data(csv_file, val_split=0.2, time_series=False,
-                 window_length=DEFAULT_WINDOW_LENGTH, window_stride=DEFAULT_WINDOW_STRIDE):
+def _windows_per_run(X, y, groups, run_ids, window_length, window_stride):
     """
-    Load sensor dataset from CSV, scale features, encode labels, and split into train/val sets.
+    Slice each recording run into windows separately, so no window spans two
+    runs (a label change or a time gap) and every window belongs to one split.
 
-    For single-sample architectures each CSV row is one sample of shape
-    (num_features,). For the time-series architecture the rows are sliced into
-    windows of shape (num_sensors, window_length) — windows never span a label
-    change — and each window is one sample.
+    Runs shorter than window_length yield no windows and are skipped.
+
+    Returns:
+        tuple: (windows, labels) of shapes (N, num_sensors, window_length) and (N,)
+    """
+    win_list, lab_list = [], []
+    for run in run_ids:
+        rows = np.flatnonzero(groups == run)
+        if len(rows) < window_length:
+            continue
+        w, lab = make_windows(X[rows], y[rows], window_length=window_length, stride=window_stride)
+        win_list.append(w)
+        lab_list.append(lab)
+    if not win_list:
+        raise ValueError(
+            f'No windows of length {window_length} could be formed in this split; '
+            'every run is shorter than the window.'
+        )
+    return np.concatenate(win_list), np.concatenate(lab_list)
+
+
+def prepare_data(csv_file, val_split=0.2, time_series=False,
+                 window_length=DEFAULT_WINDOW_LENGTH, window_stride=DEFAULT_WINDOW_STRIDE,
+                 gap_seconds=2.0, random_state=42):
+    """
+    Load the dataset and produce a leakage-safe train/val split (80/20 by default).
+
+    Rows are grouped into recording runs (new run on a label change or a time gap
+    above gap_seconds) and whole runs are assigned to train or val, so adjacent
+    near-duplicate readings never straddle the split. The scaler is fit on the
+    training rows only.
+
+    For ScentCNNsmall each row is one sample of shape (num_features,). For the
+    time-series ScentCNNrobust each run is sliced into windows of shape
+    (num_sensors, window_length) after the split, so overlapping windows
+    (stride < window_length) stay within one split.
 
     Parameters:
         csv_file (str): Path to CSV dataset file containing raw sensor telemetry
-        val_split (float): Ratio of dataset reserved for validation (default 0.2)
+        val_split (float): Fraction of runs reserved for validation (default 0.2)
         time_series (bool): When True, produce windowed samples for ScentCNNrobust
         window_length (int): Window size (time steps) when time_series is True
-        window_stride (int): Window stride when time_series is True (stride <
-            window_length yields overlapping windows for more training samples)
+        window_stride (int): Window stride when time_series is True
+        gap_seconds (float): Time gap that separates recording runs
+        random_state (int): Seed for the group splitter
 
     Returns:
         tuple: (X_train, X_val, y_train, y_val, scaler, label_encoder)
     """
     df = pd.read_csv(csv_file)
-    features = df[FEATURE_COLS].copy()
+    features = df[FEATURE_COLS]
 
-    # Scale the real sensor features (no zero-padding).
-    scaler = StandardScaler()
-    X = scaler.fit_transform(features)
-
-    # Encode labels
     label_encoder = LabelEncoder()
     y = label_encoder.fit_transform(df['Label'])
+    groups = assign_groups(df, gap_seconds=gap_seconds)
+
+    gss = GroupShuffleSplit(n_splits=1, test_size=val_split, random_state=random_state)
+    train_idx, val_idx = next(gss.split(features, y, groups))
+
+    # Fit on training rows only, then apply the same transform to every row.
+    scaler = StandardScaler()
+    scaler.fit(features.iloc[train_idx])
+    X = scaler.transform(features).astype(np.float32)
 
     if time_series:
-        # Slice the scaled per-row stream into (sensors, time) windows, cut within
-        # consecutive same-label segments only. NOTE: overlapping windows
-        # (window_stride < window_length) can place near-identical windows on both
-        # sides of the split; set window_stride == window_length for a clean,
-        # leakage-free split at the cost of fewer samples.
-        Xw, yw = make_windows(X, y, window_length=window_length, stride=window_stride)
-        X_train, X_val, y_train, y_val = train_test_split(
-            Xw, yw, test_size=val_split, random_state=42, stratify=yw
-        )
+        X_train, y_train = _windows_per_run(
+            X, y, groups, np.unique(groups[train_idx]), window_length, window_stride)
+        X_val, y_val = _windows_per_run(
+            X, y, groups, np.unique(groups[val_idx]), window_length, window_stride)
         return X_train, X_val, y_train, y_val, scaler, label_encoder
 
-    # Split data (row-wise samples)
-    X_train, X_val, y_train, y_val = train_test_split(
-        X, y, test_size=val_split, random_state=42, stratify=y
-    )
-
-    return X_train, X_val, y_train, y_val, scaler, label_encoder
+    return X[train_idx], X[val_idx], y[train_idx], y[val_idx], scaler, label_encoder
 
 
-def train_model(model_name, csv_file='csv/training_data.csv', num_epochs=300, lr=0.0005, val_split=0.2, batch_size=32, history_dir='logs', arch='small', patience=10, window_length=DEFAULT_WINDOW_LENGTH, window_stride=DEFAULT_WINDOW_STRIDE):
+def train_model(model_name, csv_file='csv/training_data.csv', num_epochs=300, lr=0.0005, weight_decay=1e-4, val_split=0.2, batch_size=32, history_dir='logs', arch='small', patience=10, gap_seconds=2.0, window_length=DEFAULT_WINDOW_LENGTH, window_stride=DEFAULT_WINDOW_STRIDE):
     """
-    Execute full training and validation loop for the scent classification model.
+    Train a scent classifier with a grouped 80/20 split, class-weighted loss,
+    weight decay, LR scheduling, early stopping, and per-epoch history logging.
 
     Parameters:
         model_name (str): Model name used for saving the checkpoint and history CSVs
         csv_file (str): Path to CSV training dataset file (default 'csv/training_data.csv')
-        num_epochs (int): Total number of training epochs (default 300)
-        lr (float): Learning rate for Adam optimizer (default 0.0005)
-        val_split (float): Ratio of dataset reserved for validation (default 0.2)
+        num_epochs (int): Maximum number of training epochs (default 300)
+        lr (float): Initial learning rate for Adam optimizer (default 0.0005)
+        weight_decay (float): L2 regularization strength (default 1e-4)
+        val_split (float): Fraction of recording runs reserved for validation (default 0.2)
         batch_size (int): Mini-batch size for DataLoaders (default 32)
         history_dir (str): Directory (relative to this script) for per-epoch history CSVs (default 'logs')
         arch (str): Model architecture to use (default 'small')
         patience (int): Epochs without val-loss improvement before early stopping (default 10)
+        gap_seconds (float): Time gap that separates recording runs (default 2.0)
         window_length (int): Window size (time steps) for time-series architectures
         window_stride (int): Window stride for time-series architectures
 
@@ -117,6 +148,7 @@ def train_model(model_name, csv_file='csv/training_data.csv', num_epochs=300, lr
     X_train, X_val, y_train, y_val, scaler, label_encoder = prepare_data(
         csv_file, val_split, time_series=time_series,
         window_length=window_length, window_stride=window_stride,
+        gap_seconds=gap_seconds,
     )
 
     # Create dataloaders
@@ -145,8 +177,14 @@ def train_model(model_name, csv_file='csv/training_data.csv', num_epochs=300, lr
         num_features = X_train.shape[1]
         model = model_cls(num_classes=num_classes).to(device)
 
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=lr)
+    # Class weighting to counter label imbalance.
+    class_counts = np.bincount(y_train, minlength=num_classes).astype(np.float32)
+    class_weights = torch.FloatTensor(
+        len(y_train) / (num_classes * np.clip(class_counts, 1.0, None))).to(device)
+
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10)
 
     history = []
     best_val_loss = float('inf')
@@ -192,6 +230,7 @@ def train_model(model_name, csv_file='csv/training_data.csv', num_epochs=300, lr
                 correct += (predicted == labels).sum().item()
         val_loss /= max(len(val_loader), 1)
         val_acc = 100.0 * correct / max(total, 1)
+        scheduler.step(val_loss)
 
         history.append({
             'epoch': epoch + 1,
@@ -234,6 +273,8 @@ def train_model(model_name, csv_file='csv/training_data.csv', num_epochs=300, lr
     with open(hist_path, 'a') as f:
         f.write(f'# {summary}\n')
         f.write(f'\n# Training file: {os.path.normpath(csv_file)}\n')
+        if time_series:
+            f.write(f'# Window length: {num_features}, stride: {window_stride}\n')
     print(f'Training history saved to {hist_path}')
 
     return model, scaler, label_encoder

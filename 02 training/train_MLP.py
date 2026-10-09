@@ -26,7 +26,7 @@ utils_path = os.path.join(current_dir, '../01 utils')
 sys.path.append(utils_path)
 
 try:
-    from model_arch import ScentMLPSmall, ScentMLPRobust
+    from model_arch import ScentMLPSmall, ScentMLPRobust, assign_groups
 except ImportError as e:
     print("\nError: Failed to import Neural Network architectures.")
     print(f"Details: {e}")
@@ -34,34 +34,6 @@ except ImportError as e:
 
 FEATURE_COLS = ['Temp', 'Hum', 'NO2_V', 'Eth_V', 'VOC_V', 'CO_V']
 ARCH_MAP = {'small': ScentMLPSmall, 'robust': ScentMLPRobust}
-
-
-def _assign_groups(df, gap_seconds=2.0):
-    """
-    Assign a group id to each row so that leakage-prone, adjacent time-series
-    readings stay together in a single split.
-
-    A new group starts whenever the Label changes or the time gap between two
-    consecutive rows exceeds ``gap_seconds`` (i.e. a new recording run).
-
-    Parameters:
-        df (pandas.DataFrame): Dataset containing 'Timestamp' and 'Label' columns.
-        gap_seconds (float): Time gap (seconds) that marks a new recording run.
-
-    Returns:
-        numpy.ndarray: Integer group id per row.
-    """
-    if 'Timestamp' in df.columns:
-        ts = pd.to_datetime(df['Timestamp'], errors='coerce')
-        gap = ts.diff().dt.total_seconds().fillna(0.0)
-        new_run = gap > gap_seconds
-    else:
-        # No timestamps available: fall back to label-change boundaries only.
-        new_run = pd.Series(False, index=df.index)
-
-    label_change = df['Label'].ne(df['Label'].shift()).fillna(True)
-    boundaries = (new_run | label_change).astype(int)
-    return boundaries.cumsum().to_numpy()
 
 
 def prepare_data(csv_file, val_split=0.2, gap_seconds=2.0, random_state=42):
@@ -86,7 +58,7 @@ def prepare_data(csv_file, val_split=0.2, gap_seconds=2.0, random_state=42):
     features = df[FEATURE_COLS].copy()
     label_encoder = LabelEncoder()
     y = label_encoder.fit_transform(df['Label'])
-    groups = _assign_groups(df, gap_seconds=gap_seconds)
+    groups = assign_groups(df, gap_seconds=gap_seconds)
 
     X_all = features.to_numpy(dtype=np.float32)
 
