@@ -431,7 +431,14 @@ if __name__ == '__main__':
     if not paths:
         parser.print_help()
     elif len(paths) == 1:
-        analyze_accuracy_log(paths[0])
+        report = analyze_accuracy_log(paths[0])
+        if report:
+            os.makedirs(REPORTS_DIR, exist_ok=True)
+            stamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+            out_path = os.path.join(REPORTS_DIR, f'report_{_model_name(paths[0])}_{stamp}.txt')
+            with open(out_path, 'w', encoding='utf-8') as f:
+                f.write(f'Model: {_model_name(paths[0])}\n' + report)
+            print(f'Report saved to: 03 inference/analysis_reports/{os.path.basename(out_path)}')
     else:
         comparison = compare_logs(paths)
         if comparison:
