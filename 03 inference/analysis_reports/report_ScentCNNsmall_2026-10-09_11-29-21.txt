@@ -1,0 +1,42 @@
+Model: ScentCNNsmall
+Architecture: ScentCNNsmall
+
+
+=================================================================
+ACCURACY TEST ANALYSIS
+=================================================================
+
+
+Overall Accuracy: 70.36% (197/280)
+
+
+Segment   | Ground Truth    | Initial     | Recovery Delay 
+-----------------------------------------------------------------
+1         | air             | MATCH       | 0.00s          
+2         | coffee          | MISMATCH    | NO RECOVERY    
+3         | alcohol         | MATCH       | 0.00s          
+4         | lemon           | MATCH       | 0.00s          
+5         | air             | MISMATCH    | 7.52s          
+6         | coffee          | MATCH       | 0.00s          
+7         | alcohol         | MATCH       | 0.00s          
+8         | lemon           | MATCH       | 0.00s          
+9         | air             | MATCH       | 0.00s          
+10        | coffee          | MISMATCH    | 22.56s         
+11        | alcohol         | MATCH       | 0.00s          
+12        | lemon           | MATCH       | 0.00s          
+13        | air             | MATCH       | 0.00s          
+14        | coffee          | MISMATCH    | NO RECOVERY    
+15        | alcohol         | MATCH       | 0.00s          
+16        | lemon           | MATCH       | 0.00s          
+17        | air             | MATCH       | 0.00s          
+18        | coffee          | MISMATCH    | 11.27s         
+19        | alcohol         | MATCH       | 0.00s          
+20        | lemon           | MISMATCH    | NO RECOVERY    
+-----------------------------------------------------------------
+Label           | Occurrences  | Initial Mismatches   | Mean Recovery Delay 
+-----------------------------------------------------------------
+air             | 5            | 1                    | 7.52s
+coffee          | 3            | 2                    | 16.92s
+alcohol         | 5            | 0                    | 0.00s
+lemon           | 4            | 0                    | 0.00s
+=================================================================
