@@ -1,0 +1,10 @@
+Figures generated: 2026-10-10_10-37-42
+
+Logs used:
+  ScentMLPsmall: training_history_ScentMLPsmall_20260928_142054.csv
+  ScentMLProbust: training_history_ScentMLProbust_20260928_142525.csv
+  ScentCNNsmall: training_history_ScentCNNsmall_20261009_112147.csv
+  ScentCNNrobust: training_history_ScentCNNrobust_20261009_112546.csv
+
+Figures:
+  training and validation loss with the selected checkpoint (training histories; saved under 02 training/figures)

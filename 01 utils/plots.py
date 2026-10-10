@@ -1,38 +1,54 @@
 """
-Figures for accuracy-test logs produced by 03 inference/infer.py.
+Figures for accuracy-test logs produced by 03 inference/infer.py and training
+histories produced by 02 training/train_*.py.
 
-Every figure shows all given models side by side, using the same numbers as
-analysis.py (it reuses load_log and summarize):
+Every figure shows all given models side by side. Accuracy figures use the same
+numbers as analysis.py (it reuses load_log and summarize):
     1_accuracy_ci.png      accuracy and macro-F1 with segment-bootstrap 95% CIs
     2_confusion.png        row-normalized confusion matrix per model
     3_per_class.png        per-class precision, recall and F1
     4_timeline.png         every window, correct or wrong, segment by segment
     5_recovery_delay.png   mean late-recovery delay per odor
     6_calibration.png      reliability diagram (confidence vs. accuracy)
+From training histories (training_history_*.csv):
+    training_loss.png    training and validation loss, selected checkpoint marked
 
 Usage:
-    python plots.py <log1.csv> <log2.csv> ...        # all figures
+    python plots.py <log1.csv> <log2.csv> ...        # all figures the logs support
     python plots.py -c -r <log1.csv> <log2.csv> ...  # only the selected figures
-Log names may be given as bare file names; they are looked up in 03 inference/logs.
-PNGs (300 dpi) are written to 03 inference/figures/<timestamp>/.
+    python plots.py -l <log1.csv> <log2.csv> ...     # loss figure from each model's
+                                                     # newest training history
+    python plots.py <training_history_X.csv> ...     # loss figure from given histories
+Bare file names are looked up in 03 inference/logs (accuracy logs) or
+02 training/logs (training histories). PNGs (300 dpi) are written to
+03 inference/figures/<model names>_<timestamp>/ and
+02 training/figures/<model names>_<timestamp>/, each with a sources.txt.
 """
 
 import argparse
+import glob
 import os
+import sys
 from datetime import datetime
 
 import matplotlib
 matplotlib.use('Agg')  # no display needed (Jetson over SSH)
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap, ListedColormap
+from matplotlib.lines import Line2D
 from matplotlib.patches import Patch, Rectangle
 import numpy as np
+import pandas as pd
 
 from analysis import load_log, summarize, _model_name, _resolve
 
 DPI = 300
-FIGURES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                           '..', '03 inference', 'figures')
+MIN_DELTA = 1e-4  # val-loss improvement the trainers count as significant
+HISTORY_PREFIX = 'training_history_'
+_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
+FIGURES_DIR = os.path.join(_ROOT, '03 inference', 'figures')
+TRAINING_LOGS_DIR = os.path.join(_ROOT, '02 training', 'logs')
+TRAINING_FIGURES_DIR = os.path.join(_ROOT, '02 training', 'figures')
 
 # One fixed color per model across all figures. Unknown models take the next
 # free slot, in the order given on the command line.
@@ -298,12 +314,72 @@ def plot_calibration(models, colors, out_dir):
     _save(fig, out_dir, '6_calibration.png')
 
 
+def selected_epoch(history):
+    """
+    Epoch whose weights the trainer restored: the first epoch that improved the
+    best validation loss by more than MIN_DELTA, as in train_CNN.py / train_MLP.py.
+    """
+    best_loss, best_epoch = float('inf'), None
+    for epoch, loss in zip(history['epoch'], history['val_loss']):
+        if loss < best_loss - MIN_DELTA:
+            best_loss, best_epoch = loss, int(epoch)
+    return best_epoch
+
+
+def plot_training_loss(histories, colors, out_dir):
+    """
+    One panel per model: training loss (dashed) and validation loss (solid) per
+    epoch, with the selected checkpoint marked.
+    """
+    n = len(histories)
+    ncols = min(n, 2)
+    nrows = int(np.ceil(n / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(3.6 * ncols, 2.6 * nrows),
+                             squeeze=False)
+    for ax, (name, h) in zip(axes.flat, histories.items()):
+        best = selected_epoch(h)
+        ax.plot(h['epoch'], h['train_loss'], '--', color=colors[name], linewidth=1.5)
+        ax.plot(h['epoch'], h['val_loss'], '-', color=colors[name], linewidth=2)
+        if best is not None:
+            best_loss = float(h.loc[h['epoch'] == best, 'val_loss'].iloc[0])
+            ax.axvline(best, color='#8a8984', linestyle=':', linewidth=1)
+            ax.plot(best, best_loss, 'o', color='#0b0b0b', markersize=6, zorder=3)
+            ax.annotate(f'epoch {best}', (best, 1), xycoords=('data', 'axes fraction'),
+                        xytext=(3, -2), textcoords='offset points', ha='left', va='top',
+                        fontsize=7.5, color=TEXT_SECONDARY)
+        ax.set_title(name)
+        ax.set_xlabel('Epoch')
+        ax.set_ylabel('Loss')
+        ax.set_xlim(0, h['epoch'].max() + 1)
+        ax.set_ylim(0, None)
+        _grid(ax)
+    for ax in list(axes.flat)[n:]:
+        ax.axis('off')
+    handles = [Line2D([], [], color='#8a8984', linestyle='--', linewidth=1.5,
+                      label='Training loss'),
+               Line2D([], [], color='#8a8984', linestyle='-', linewidth=2,
+                      label='Validation loss'),
+               Line2D([], [], color='#0b0b0b', marker='o', linestyle=':',
+                      label='Selected checkpoint')]
+    fig.tight_layout()
+    fig.legend(handles=handles, loc='upper center', ncol=3, bbox_to_anchor=(0.5, 0.0))
+    _save(fig, out_dir, 'training_loss.png')
+
+
+def _history_model_name(path):
+    name = os.path.splitext(os.path.basename(path))[0]
+    if name.startswith(HISTORY_PREFIX):
+        name = name[len(HISTORY_PREFIX):]
+    parts = name.rsplit('_', 2)  # drop trailing _YYYYMMDD_HHMMSS
+    return parts[0] if len(parts) == 3 else name
+
+
 # ----------------------------------------------------------------------------
 # Entry point
 # ----------------------------------------------------------------------------
 
 # (flag, short flag, help) for each figure, in output order.
-FIGURES = [
+ACCURACY_FIGURES = [
     ('accuracy', '-a', 'accuracy and macro-F1 with 95%% CIs'),
     ('confusion', '-c', 'confusion matrices'),
     ('per_class', '-p', 'per-class precision, recall and F1'),
@@ -311,14 +387,31 @@ FIGURES = [
     ('delay', '-d', 'recovery delay per odor'),
     ('calibration', '-r', 'calibration (reliability diagram)'),
 ]
+LOSS_FIGURE = ('loss', '-l', 'training and validation loss with the selected checkpoint '
+                             '(training histories; saved under 02 training/figures)')
+FIGURES = ACCURACY_FIGURES + [LOSS_FIGURE]
+
+
+def _new_out_dir(base, names, paths, figure_texts):
+    """Create <base>/<model names>_<timestamp>/ with a sources.txt listing the inputs."""
+    stamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+    out_dir = os.path.join(base, '_'.join(list(names) + [stamp]))
+    os.makedirs(out_dir, exist_ok=True)
+    with open(os.path.join(out_dir, 'sources.txt'), 'w', encoding='utf-8') as f:
+        f.write(f'Figures generated: {stamp}\n\nLogs used:\n')
+        f.writelines(f'  {name}: {os.path.basename(path)}\n'
+                     for name, path in zip(names, paths))
+        f.write('\nFigures:\n')
+        f.writelines(f"  {text.replace('%%', '%')}\n" for text in figure_texts)
+    return out_dir
 
 
 def make_figures(log_paths, selected=None):
     """
-    Load every log, compute metrics, and write the selected figures (all when
-    `selected` is empty) to a new folder.
+    Load every accuracy log, compute metrics, and write the selected accuracy
+    figures (all when `selected` is empty) to a new folder.
     """
-    selected = set(selected or [f for f, _, _ in FIGURES])
+    selected = set(selected or [f for f, _, _ in ACCURACY_FIGURES])
     models, used_logs = {}, []
     for path in log_paths:
         df = load_log(path)
@@ -331,16 +424,8 @@ def make_figures(log_paths, selected=None):
 
     classes = sorted(set().union(*(m['classes'] for _, m in models.values())))
     colors = _colors(list(models))
-    stamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
-    out_dir = os.path.join(FIGURES_DIR, '_'.join(list(models) + [stamp]))
-    os.makedirs(out_dir, exist_ok=True)
-    with open(os.path.join(out_dir, 'sources.txt'), 'w', encoding='utf-8') as f:
-        f.write(f'Figures generated: {stamp}\n\nLogs used:\n')
-        f.writelines(f'  {name}: {os.path.basename(path)}\n'
-                     for name, path in zip(models, used_logs))
-        f.write('\nFigures:\n')
-        f.writelines(f'  {text}\n'.replace('%%', '%')
-                     for name, _, text in FIGURES if name in selected)
+    out_dir = _new_out_dir(FIGURES_DIR, models, used_logs,
+                           [text for name, _, text in ACCURACY_FIGURES if name in selected])
 
     if 'accuracy' in selected:
         plot_accuracy_ci(models, colors, out_dir)
@@ -357,19 +442,76 @@ def make_figures(log_paths, selected=None):
     return out_dir
 
 
+def make_training_figure(history_paths):
+    """Load training histories and write the loss figure to a new folder."""
+    histories, used = {}, []
+    for path in history_paths:
+        if not os.path.exists(path):
+            print(f'Error: Training history not found: {path}')
+            continue
+        # '#' lines are run notes appended by the trainer.
+        histories[_history_model_name(path)] = pd.read_csv(path, comment='#')
+        used.append(path)
+    if not histories:
+        print('Error: no readable training histories.')
+        return None
+    out_dir = _new_out_dir(TRAINING_FIGURES_DIR, histories, used, [LOSS_FIGURE[2]])
+    plot_training_loss(histories, _colors(list(histories)), out_dir)
+    return out_dir
+
+
+def _is_history(path):
+    return os.path.basename(path).startswith(HISTORY_PREFIX)
+
+
+def _resolve_any(path):
+    """Bare names: training histories from 02 training/logs, the rest from 03 inference/logs."""
+    if os.path.exists(path):
+        return path
+    return os.path.join(TRAINING_LOGS_DIR, path) if _is_history(path) else _resolve(path)
+
+
+def _latest_history(model):
+    """Newest training history of a model in 02 training/logs, or None."""
+    matches = sorted(glob.glob(os.path.join(TRAINING_LOGS_DIR, f'{HISTORY_PREFIX}{model}_*.csv')))
+    return matches[-1] if matches else None
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('logs', nargs='*', help='accuracy-test log CSV(s); bare names are looked up in 03 inference/logs')
-    group = parser.add_argument_group('figures (default: all)')
+    parser.add_argument('logs', nargs='*',
+                        help='accuracy-test log CSV(s) and/or training history CSV(s); bare names '
+                             'are looked up in 03 inference/logs or 02 training/logs')
+    group = parser.add_argument_group('figures (default: all that the given logs support)')
     for name, short, text in FIGURES:
         group.add_argument(short, '--' + name.replace('_', '-'), dest=name,
                            action='store_true', help=text)
     args = parser.parse_args()
-    if not args.logs:
+    paths = [_resolve_any(p) for p in args.logs]
+    accuracy_logs = [p for p in paths if not _is_history(p)]
+    history_logs = [p for p in paths if _is_history(p)]
+    selected = [name for name, _, _ in ACCURACY_FIGURES if getattr(args, name)]
+    any_flag = bool(selected) or args.loss
+
+    if not paths:
         parser.print_help()
-    else:
-        selected = [name for name, _, _ in FIGURES if getattr(args, name)]
-        out = make_figures([_resolve(p) for p in args.logs], selected)
+        sys.exit()
+    if accuracy_logs and (selected or not any_flag):
+        out = make_figures(accuracy_logs, selected)
         if out:
             print(f'Figures saved to: 03 inference/figures/{os.path.basename(out)}')
+    elif selected:
+        print('Error: accuracy figures need accuracy-test logs.')
+    if args.loss and not history_logs:
+        # No histories given: use each model's newest training history.
+        for name in dict.fromkeys(_model_name(p) for p in accuracy_logs):
+            found = _latest_history(name)
+            if found:
+                history_logs.append(found)
+            else:
+                print(f'Warning: no training history found for {name}.')
+    if history_logs and (args.loss or not any_flag):
+        out = make_training_figure(history_logs)
+        if out:
+            print(f'Figures saved to: 02 training/figures/{os.path.basename(out)}')
