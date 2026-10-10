@@ -273,7 +273,7 @@ def plot_recovery_delay(models, colors, classes, out_dir):
         for i, v in enumerate(values[n]):
             x = i - 0.4 + width * (k + 0.5)
             ax.text(x, (0 if np.isnan(v) else v) + top * 0.02,
-                    '-' if np.isnan(v) else f'{v:.0f}', ha='center', va='bottom',
+                    '-' if np.isnan(v) else f'{v:.2f}', ha='center', va='bottom',
                     fontsize=7, color=TEXT_SECONDARY)
     ax.set_ylim(0, top * 1.15)
     ax.set_ylabel('Mean delay to first\ncorrect window (s)')

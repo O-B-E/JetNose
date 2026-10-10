@@ -1,4 +1,4 @@
-Figures generated: 2026-10-10_08-49-46
+Figures generated: 2026-10-10_16-12-59
 
 Logs used:
   ScentMLPsmall: accuracy_test_ScentMLPsmall_2026-09-28_17-39-37.csv

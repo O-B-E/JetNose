@@ -48,34 +48,34 @@ Never recovered: no window of the segment classified correctly.
 
 Class    Segments  Correct at start  Recovered late  Never recovered  Mean delay
 -------  --------  ----------------  --------------  ---------------  ----------
-air             5                 4               1                0      11.3 s
+air             5                 4               1                0     11.28 s
 alcohol         5                 5               0                0           -
 coffee          5                 5               0                0           -
 lemon           5                 3               0                2           -
 
 Per segment:
-#   True class  Windows  Accuracy    Start   Delay
---  ----------  -------  --------  -------  ------
-1   air              14    100.0%  correct       -
-2   coffee           14     71.4%  correct       -
-3   alcohol          14    100.0%  correct       -
-4   lemon            14    100.0%  correct       -
-5   air              14     78.6%     late  11.3 s
-6   coffee           14    100.0%  correct       -
-7   alcohol          14    100.0%  correct       -
-8   lemon            14    100.0%  correct       -
-9   air              14    100.0%  correct       -
-10  coffee           14    100.0%  correct       -
-11  alcohol          14    100.0%  correct       -
-12  lemon            14      0.0%    NEVER       -
-13  air              14    100.0%  correct       -
-14  coffee           14    100.0%  correct       -
-15  alcohol          14    100.0%  correct       -
-16  lemon            14      7.1%  correct       -
-17  air              14    100.0%  correct       -
-18  coffee           14    100.0%  correct       -
-19  alcohol          14    100.0%  correct       -
-20  lemon            14      0.0%    NEVER       -
+#   True class  Windows  Accuracy    Start    Delay
+--  ----------  -------  --------  -------  -------
+1   air              14    100.0%  correct        -
+2   coffee           14     71.4%  correct        -
+3   alcohol          14    100.0%  correct        -
+4   lemon            14    100.0%  correct        -
+5   air              14     78.6%     late  11.28 s
+6   coffee           14    100.0%  correct        -
+7   alcohol          14    100.0%  correct        -
+8   lemon            14    100.0%  correct        -
+9   air              14    100.0%  correct        -
+10  coffee           14    100.0%  correct        -
+11  alcohol          14    100.0%  correct        -
+12  lemon            14      0.0%    NEVER        -
+13  air              14    100.0%  correct        -
+14  coffee           14    100.0%  correct        -
+15  alcohol          14    100.0%  correct        -
+16  lemon            14      7.1%  correct        -
+17  air              14    100.0%  correct        -
+18  coffee           14    100.0%  correct        -
+19  alcohol          14    100.0%  correct        -
+20  lemon            14      0.0%    NEVER        -
 
 5. Calibration
 --------------

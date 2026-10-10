@@ -223,7 +223,7 @@ def _pct(x):
 
 
 def _sec(x):
-    return '-' if pd.isna(x) else f'{x:.1f} s'
+    return '-' if pd.isna(x) else f'{x:.2f} s'
 
 
 def _table(headers, rows, left=1):
