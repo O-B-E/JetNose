@@ -1,0 +1,15 @@
+Figures generated: 2026-10-10_08-49-46
+
+Logs used:
+  ScentMLPsmall: accuracy_test_ScentMLPsmall_2026-09-28_17-39-37.csv
+  ScentMLProbust: accuracy_test_ScentMLProbust_2026-09-28_17-41-26.csv
+  ScentCNNsmall: accuracy_test_ScentCNNsmall_2026-10-09_11-29-21.csv
+  ScentCNNrobust: accuracy_test_ScentCNNrobust_2026-10-09_11-31-48.csv
+
+Figures:
+  accuracy and macro-F1 with 95% CIs
+  confusion matrices
+  per-class precision, recall and F1
+  per-window timeline
+  recovery delay per odor
+  calibration (reliability diagram)
