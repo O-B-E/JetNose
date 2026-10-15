@@ -12,6 +12,9 @@ numbers as analysis.py (it reuses load_log and summarize):
     6_calibration.png      reliability diagram (confidence vs. accuracy)
 From training histories (training_history_*.csv):
     training_loss.png    training and validation loss, selected checkpoint marked
+From collected data CSVs (with --visualize):
+    <odor>.png           every sensor's readings over that odor's segments
+    pca_3d.png           every sample in the first three principal components
 
 Usage:
     python plots.py <log1.csv> <log2.csv> ...        # all figures the logs support
@@ -19,6 +22,8 @@ Usage:
     python plots.py -l <log1.csv> <log2.csv> ...     # loss figure from each model's
                                                      # newest training history
     python plots.py <training_history_X.csv> ...     # loss figure from given histories
+    python plots.py --visualize <data.csv>           # sensor readings per odor, saved to
+                                                     # <stage>/figures/<data>_visuals/
 Bare file names are looked up in 03 inference/logs (accuracy logs) or
 02 training/logs (training histories). PNGs (300 dpi) are written to
 03 inference/figures/<model names>_<timestamp>/ and
@@ -46,9 +51,12 @@ DPI = 300
 MIN_DELTA = 1e-4  # val-loss improvement the trainers count as significant
 HISTORY_PREFIX = 'training_history_'
 _ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
-FIGURES_DIR = os.path.join(_ROOT, '03 inference', 'figures')
+INFERENCE_DIR = os.path.join(_ROOT, '03 inference')
+FIGURES_DIR = os.path.join(INFERENCE_DIR, 'figures')
+INFERENCE_CSV_DIR = os.path.join(INFERENCE_DIR, 'csv')
 TRAINING_LOGS_DIR = os.path.join(_ROOT, '02 training', 'logs')
 TRAINING_FIGURES_DIR = os.path.join(_ROOT, '02 training', 'figures')
+TRAINING_CSV_DIR = os.path.join(_ROOT, '02 training', 'csv')
 
 # One fixed color per model across all figures. Unknown models take the next
 # free slot, in the order given on the command line.
@@ -60,7 +68,12 @@ MODEL_COLORS = {
     'ScentCNNsmall': PALETTE[2],
     'ScentCNNrobust': PALETTE[3],
 }
-CORRECT_COLOR = '#d9d8d4'   # neutral: correct windows recede
+GAS_SENSORS = ['NO2_V', 'Eth_V', 'VOC_V', 'CO_V']
+ENV_SENSORS = ['Temp', 'Hum']
+SENSOR_COLORS = dict(zip(GAS_SENSORS + ENV_SENSORS, PALETTE[:4] + [PALETTE[7], PALETTE[6]]))
+ODOR_COLORS = {'air': '#8a8984', 'coffee': '#8c5a2b', 'alcohol': PALETTE[0],
+               'lemon': PALETTE[3]}
+CORRECT_COLOR = '#d9d8d4' # neutral: correct windows recede
 WRONG_COLOR = '#d03b3b'     # errors stand out
 NEVER_COLOR = '#e8a0a0'     # faint red hatch: segment never recovered
 MISSING_COLOR = '#ffffff'   # window not produced by this model
@@ -366,6 +379,95 @@ def plot_training_loss(histories, colors, out_dir):
     _save(fig, out_dir, 'training_loss.png')
 
 
+def _odor_time(odor_df):
+    """
+    Elapsed seconds with the odor's segments joined back to back: each segment
+    continues one sample period after the previous one ends. Returns the time
+    array and the start time of every segment after the first.
+    """
+    ts = odor_df['Timestamp']
+    period = ts.diff().dt.total_seconds().median()
+    period = 0.25 if np.isnan(period) else period
+    t = np.empty(len(odor_df))
+    starts, offset, i = [], 0.0, 0
+    for _, seg in odor_df.groupby('Segment', sort=True):
+        rel = (seg['Timestamp'] - seg['Timestamp'].iloc[0]).dt.total_seconds().to_numpy()
+        if i:
+            starts.append(offset)
+        t[i:i + len(seg)] = offset + rel
+        offset += rel[-1] + period
+        i += len(seg)
+    return t, starts
+
+
+def plot_sensor_readings(df, odor, out_dir):
+    """
+    Every sensor of one odor against elapsed time: gas sensors (solid) on the
+    left axis in volts, temperature and humidity (dashed) on the right axis.
+    Faint vertical lines mark where a new segment of the odor starts.
+    """
+    odor_df = df[df['Label'] == odor]
+    t, starts = _odor_time(odor_df)
+    fig, ax = plt.subplots(figsize=(9, 3.6))
+    env_ax = ax.twinx()
+    env_ax.spines['right'].set_visible(True)
+    for s in starts:
+        ax.axvline(s, color=GRID_COLOR, linewidth=1, zorder=0)
+    lines = []
+    for col in GAS_SENSORS:
+        lines += ax.plot(t, odor_df[col], '-', color=SENSOR_COLORS[col], linewidth=1.2,
+                         label=col)
+    for col in ENV_SENSORS:
+        lines += env_ax.plot(t, odor_df[col], '--', color=SENSOR_COLORS[col],
+                             linewidth=1.2, label=col)
+    ax.set_xlim(0, t.max())
+    ax.set_xlabel('Elapsed time (s)  (segments joined; vertical lines = new segment)')
+    ax.set_ylabel('Sensor voltage (V)')
+    env_ax.set_ylabel('Temp (°C) / Hum (%)')
+    ax.set_title(f'{odor}  ({len(starts) + 1} segments, {len(odor_df)} samples)')
+    _grid(ax)
+    ax.legend(handles=lines, loc='upper center', ncol=len(lines),
+              bbox_to_anchor=(0.5, -0.18))
+    fig.tight_layout()
+    _save(fig, out_dir, f'{odor}.png')
+
+
+def pca(x, n_components=3):
+    """
+    PCA of the z-scored columns of x (sensors have different units and scales).
+    Returns the projected samples and each component's explained-variance ratio.
+    """
+    std = x.std(axis=0)
+    z = (x - x.mean(axis=0)) / np.where(std > 0, std, 1)
+    _, s, vt = np.linalg.svd(z, full_matrices=False)
+    explained = s ** 2 / np.sum(s ** 2)
+    return z @ vt[:n_components].T, explained[:n_components]
+
+
+def plot_pca_3d(df, out_dir):
+    """
+    Every sample as a point in the space of the first three principal components
+    of the six z-scored sensors, colored by odor.
+    """
+    proj, explained = pca(df[GAS_SENSORS + ENV_SENSORS].to_numpy(dtype=float))
+    odors = list(df['Label'].unique())
+    spare = [c for c in PALETTE if c not in ODOR_COLORS.values()]
+    fig = plt.figure(figsize=(7, 6))
+    ax = fig.add_subplot(projection='3d')
+    for odor in odors:
+        mask = (df['Label'] == odor).to_numpy()
+        color = ODOR_COLORS[odor] if odor in ODOR_COLORS else spare.pop(0)
+        ax.scatter(*proj[mask].T, s=4, color=color, alpha=0.6, linewidths=0,
+                   label=f'{odor} ({mask.sum()})', depthshade=False)
+    for i, set_label in enumerate([ax.set_xlabel, ax.set_ylabel, ax.set_zlabel]):
+        set_label(f'PC{i + 1} ({100 * explained[i]:.1f}%)')
+    ax.set_title(f'PCA of the 6 z-scored sensors  '
+                 f'({100 * explained.sum():.1f}% of variance shown)')
+    ax.legend(loc='upper left', markerscale=3)
+    fig.tight_layout()
+    _save(fig, out_dir, 'pca_3d.png')
+
+
 def _history_model_name(path):
     name = os.path.splitext(os.path.basename(path))[0]
     if name.startswith(HISTORY_PREFIX):
@@ -460,6 +562,40 @@ def make_training_figure(history_paths):
     return out_dir
 
 
+def _resolve_data_csv(path):
+    """Bare names are looked up in 02 training/csv, then 03 inference/csv."""
+    if os.path.exists(path):
+        return path
+    for d in (TRAINING_CSV_DIR, INFERENCE_CSV_DIR):
+        candidate = os.path.join(d, path)
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
+
+def make_sensor_figures(csv_name):
+    """
+    One sensor-readings figure per odor of a collected data CSV, written to
+    <figures>/<csv name>_visuals/: 03 inference/figures for CSVs under
+    03 inference, 02 training/figures otherwise.
+    """
+    path = _resolve_data_csv(csv_name)
+    if path is None:
+        print(f'Error: data CSV not found: {csv_name}')
+        return None
+    df = pd.read_csv(path, parse_dates=['Timestamp'])
+    # A new segment starts whenever the label changes.
+    df['Segment'] = (df['Label'] != df['Label'].shift()).cumsum()
+    inference = os.path.abspath(path).startswith(os.path.abspath(INFERENCE_DIR) + os.sep)
+    base = FIGURES_DIR if inference else TRAINING_FIGURES_DIR
+    out_dir = os.path.join(base, os.path.splitext(os.path.basename(path))[0] + '_visuals')
+    os.makedirs(out_dir, exist_ok=True)
+    for odor in df['Label'].unique():
+        plot_sensor_readings(df, odor, out_dir)
+    plot_pca_3d(df, out_dir)
+    return out_dir
+
+
 def _is_history(path):
     return os.path.basename(path).startswith(HISTORY_PREFIX)
 
@@ -487,7 +623,17 @@ if __name__ == '__main__':
     for name, short, text in FIGURES:
         group.add_argument(short, '--' + name.replace('_', '-'), dest=name,
                            action='store_true', help=text)
+    parser.add_argument('-v', '--visualize', metavar='CSV',
+                        help='plot every sensor per odor from a collected data CSV (bare names '
+                             'are looked up in 02 training/csv, then 03 inference/csv); saved '
+                             'under that stage\'s figures/<CSV name>_visuals')
     args = parser.parse_args()
+    if args.visualize:
+        out = make_sensor_figures(args.visualize)
+        if out:
+            print(f'Figures saved to: {os.path.relpath(out, _ROOT)}')
+        if not args.logs:
+            sys.exit()
     paths = [_resolve_any(p) for p in args.logs]
     accuracy_logs = [p for p in paths if not _is_history(p)]
     history_logs = [p for p in paths if _is_history(p)]
