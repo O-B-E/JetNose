@@ -3,4 +3,5 @@ github_project_token.txt
 .obsidian
 __pycache__
 *.md
+!README.md
 diagrams
